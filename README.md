@@ -1,4 +1,4 @@
-# varekai-client — лаунчер mihomo с панелью zashboard
+# varekai-client
 
 Кроссплатформенный лаунчер ядра mihomo с графической панелью управления
 zashboard. Cам скачивает / обновляет ядро, ваш конфигурационный файл и панель,
@@ -18,59 +18,72 @@ zashboard. Cам скачивает / обновляет ядро, ваш кон
 | Платформа | Архитектуры |
 |---|---|
 | Windows 10/11 | x86_64 |
-| macOS 11+ | Apple Silicon, Intel |
+| MacOS 11+ | Apple Silicon, Intel |
 | Linux (любой дистрибутив с GUI) | x86_64, arm64 |
 
 ## Требования
 
 ### Windows
-- Windows 10/11, права администратора (запрос UAC при запуске)
+- Windows 10/11, запуск от администратора
 - WebView2 Runtime — входит в Edge; если панель не
-  открылась, установите Evergreen-рантайм с сайта Microsoft
+  открылась, установите Evergreen-runtime с сайта Microsoft
 
 ### MacOS
 - MacOS 11+
-- Запуск из Terminal: `./varekai` (двойной клик по консольному приложению
-  терминал не открывает)
+- Запуск из Terminal:
+```bash
+./varekai
+```
+- Если система блокирует приложение: ПКМ → «Открыть», либо в терминале:
+```bash
+xattr -d com.apple.quarantine varekai
+```
 - Пароль администратора при запуске
-- Если система блокирует приложение: ПКМ → «Открыть», либо в терминале
-  `xattr -d com.apple.quarantine varekai`
 
 ### Linux
 - Любой дистрибутив с Wayland или X11
 - polkit (`pkexec`)
-- Стандартные системные библиотеки DE (OpenGL, fontconfig, D-Bus, NSS) —
-  в обычных Ubuntu/Fedora/Arch/Mint с GUI они уже есть
+- Стандартные системные библиотеки DE (OpenGL, fontconfig, D-Bus, NSS)
 
 ## Установка
 
 1. Скачайте архив под вашу ОС из Releases и распакуйте в любую папку
-   (на Windows — не в Program Files).
+   (на Windows — не в Program Files)
 2. Запустите:
-   - Windows: двойной клик по `varekai.exe` (от администратора)
+   - Windows: `varekai.exe` от администратора
    - Linux: `./varekai` в терминале из папки программы
    - macOS: `./varekai` в Terminal
-3. Выберите пункт **1** — ядро, конфиг и панель скачаются, VPN запустится,
-   откроется окно управления
+3. Выберите пункт **1** — ядро, конфиг и панель скачаются / обновятся, VPN запустится,
+   откроется панель управления
 
 **Важно:** закрытие окна программы или терминала НЕ останавливает VPN — ядро
-продолжает работать в фоне. Остановка — только пункт 9.
+продолжает работать в фоне. **Остановка — только пункт 9.**
 
-## Что программа создаёт рядом с собой
+## Структура:
 
-- `config.yaml` — ваш конфиг (скачивается по ссылке из URL.txt)
+- `config.yaml` — ваш конфиг в формате .yaml (скачивается по ссылке из URL.txt)
 - `mihomo-core` / `mihomo-core.exe` — ядро
 - `archives/` — архивы ядра для отката
-- `zashboard/` — файлы панели
+- `zashboard/` — панель управления
 - `zashboard-profile/` — настройки панели (язык, тема, заставка и т.д.)
 - `mihomo-core.log`, `zashboard.log` — логи для диагностики
 
 ## Сборка из исходников (для разработчиков)
 
 - Python 3.10+
-- `pip install requests pyyaml pywebview`
-- Linux дополнительно: PySide6 + qtpy и системные `qt6-webengine`,
-  `qt6-webchannel` (в Arch: `pacman -S pyside6 python-qtpy qt6-webengine qt6-webchannel`)
-- Сборка: `pyinstaller --onedir --console --name varekai main.py`
-  (на Windows добавить `--uac-admin`)
-
+```bash
+pip install requests pyyaml pywebview
+```
+- Linux дополнительно: `pyside6`, `qtpy`, `qt6-webengine`, `qt6-webchannel`
+- Arch:
+```bash
+pacman -S pyside6 python-qtpy qt6-webengine qt6-webchannel
+```
+- Сборка:
+```bash
+pyinstaller --onedir --console --name varekai main.py
+```
+  на Windows:
+```bash
+pyinstaller --onedir --uac-admin --console --name varekai main.py`
+```
