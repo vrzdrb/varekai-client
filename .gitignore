@@ -1,0 +1,24 @@
+# Персональное
+URL.txt
+config.yaml
+
+# Скачивается/создаётся программой
+mihomo-core
+mihomo-core.exe
+archives/
+zashboard/
+unified/
+temp_extract/
+
+# Рантайм mihomo
+cache.db
+ASN.mmdb
+country.mmdb
+geoip.dat
+geosite.dat
+
+# Логи
+*.log
+
+# Python
+__pycache__/
