@@ -1,5 +1,8 @@
 # varekai-client
 
+<img width="646" height="552" alt="preview" src="https://github.com/user-attachments/assets/a46a8ddf-688d-476c-a5c8-3638834739f4" />
+
+
 Кроссплатформенный лаунчер ядра mihomo с графической панелью управления
 zashboard. Cам скачивает / обновляет ядро, ваш конфигурационный файл и панель,
 запускает VPN и открывает панель управления
