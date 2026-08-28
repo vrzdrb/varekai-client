@@ -825,44 +825,40 @@ def start_core():
         return False
 
 def stop_core():
-    """Останавливает процесс ядра"""
+    """Останавливает процесс ядра (с запросом прав, если ядро работает от root)"""
     global core_process
 
-    was_running = get_core_pid() is not None
+    if get_core_pid() is None and core_process is None:
+        print_info("Ядро не было запущено")
+        return
 
-    if core_process is not None:
-        try:
-            if get_os() == "windows":
-                subprocess.run(
-                    ["taskkill", "/F", "/PID", str(core_process.pid)],
-                    capture_output=True
-                )
-            else:
-                os.killpg(os.getpgid(core_process.pid), signal.SIGTERM)
-        except:
-            pass
-        core_process = None
-
-    # Убиваем все процессы ядра по имени (даже запущенные другими экземплярами)
-    try:
-        if get_os() == "windows":
-            subprocess.run(
-                ["taskkill", "/F", "/IM", CORE_BINARY],
-                capture_output=True
-            )
+    if get_os() == "windows":
+        # На Windows скрипт работает от администратора (UAC), taskkill работает напрямую
+        subprocess.run(["taskkill", "/F", "/IM", CORE_BINARY], capture_output=True)
+    else:
+        pkill_path = shutil.which("pkill") or "/usr/bin/pkill"
+        if is_admin():
+            subprocess.run([pkill_path, "-x", CORE_BINARY], capture_output=True)
         else:
-            subprocess.run(
-                ["pkill", "-x", CORE_BINARY],
-                capture_output=True
-            )
-    except:
-        pass
+            # Ядро запущено от root - для остановки нужны права
+            print_info("Запрос прав администратора для остановки ядра...")
+            if shutil.which("pkexec"):
+                subprocess.run(["pkexec", pkill_path, "-x", CORE_BINARY], capture_output=True)
+            elif shutil.which("sudo"):
+                # sudo спросит пароль прямо в терминале
+                subprocess.run(["sudo", pkill_path, "-x", CORE_BINARY])
+            else:
+                print_error("Не найден механизм для остановки ядра от root (pkexec/sudo)")
+                return
 
-    if was_running:
+    core_process = None
+
+    # Проверяем реальный результат, а не верим себе на слово
+    time.sleep(0.5)
+    if get_core_pid() is None:
         print_info("Ядро остановлено")
     else:
-        print_info("Ядро не было запущено")
-
+        print_error("Не удалось остановить ядро")
 
 # === ПАНЕЛЬ УПРАВЛЕНИЯ ===
 def _start_stderr_filter(log_path):
