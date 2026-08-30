@@ -988,11 +988,19 @@ def menu_update_and_run_with_dashboard():
     """Пункт 1: Обновление и запуск VPN с панелью управления"""
     core_updated = update_core()
     update_zashboard()
-    profile_updated = update_profile()
 
-    if core_updated and profile_updated:
+    if core_updated:
+        # Если конфига нет вообще (первый запуск) - пытаемся скачать
+        # до запуска ядра: без VPN может не получиться, но другого шанса нет
+        if not Path("config.yaml").exists():
+            update_profile()
+
         if start_core():
-            time.sleep(2)
+            time.sleep(3)  # даём TUN-интерфейсу время поднять маршрутизацию
+            # Профиль обновляем ПОСЛЕ запуска ядра: запросы уже идут через
+            # VPN, поэтому заблокированный ресурс доступен.
+            # Новый конфиг применится при следующем запуске ядра.
+            update_profile()
             open_dashboard()
 
     input(f"\n{YELLOW}Нажмите Enter для продолжения...{RESET}")
@@ -1014,10 +1022,16 @@ def menu_open_dashboard_only():
 def menu_update_and_run_without_dashboard():
     """Пункт 4: [Без панели] Обновление и запуск VPN"""
     core_updated = update_core()
-    profile_updated = update_profile()
 
-    if core_updated and profile_updated:
-        start_core()
+    if core_updated:
+        if not Path("config.yaml").exists():
+            update_profile()
+
+        if start_core():
+            time.sleep(3)
+            update_profile()
+
+    input(f"\n{YELLOW}Нажмите Enter для продолжения...{RESET}")
 
     input(f"\n{YELLOW}Нажмите Enter для продолжения...{RESET}")
 
