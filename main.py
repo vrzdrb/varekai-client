@@ -99,7 +99,11 @@ def print_menu_item(number, text):
     print(f"{PURPLE} {number}.{RESET} {YELLOW}{text}{RESET}")
 
 def clear_screen():
-    os.system('cls' if platform.system().lower() == "windows" else 'clear')
+    if platform.system().lower() == "windows":
+        os.system('cls')
+    else:
+        sys.stdout.write("\033[2J\033[H")
+        sys.stdout.flush()
 
 def get_script_dir():
     """Возвращает директорию, где лежит скрипт"""
