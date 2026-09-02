@@ -73,6 +73,7 @@ jobs:
           Terminal=false
           Type=Application
           Categories=Network
+          GenericName=Мы идём дальше
           EOF
 
       - name: Build with PyInstaller
@@ -91,13 +92,23 @@ jobs:
             cp START.desktop dist/varekai-client/
           fi
 
+      - name: Package
+        shell: bash
+        run: |
+          cd dist
+          if [ "${{ matrix.platform }}" = "windows" ]; then
+            7z a ../varekai-client-${{ matrix.platform }}-${{ matrix.arch }}-v${{ inputs.version }}.zip varekai-client/
+          else
+            tar -czf ../varekai-client-${{ matrix.platform }}-${{ matrix.arch }}-v${{ inputs.version }}.tar.gz varekai-client/
+          fi
+
       - name: Upload artifact
         uses: actions/upload-artifact@v5
         with:
           name: varekai-client-${{ matrix.platform }}-${{ matrix.arch }}
           path: varekai-client-${{ matrix.platform }}-${{ matrix.arch }}-v${{ inputs.version }}.*
 
-    release:
+  release:
     needs: build
     runs-on: ubuntu-latest
     permissions:
