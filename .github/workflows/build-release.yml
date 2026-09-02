@@ -97,7 +97,7 @@ jobs:
           name: varekai-client-${{ matrix.platform }}-${{ matrix.arch }}
           path: varekai-client-${{ matrix.platform }}-${{ matrix.arch }}-v${{ inputs.version }}.*
 
-  release:
+    release:
     needs: build
     runs-on: ubuntu-latest
     permissions:
@@ -120,6 +120,10 @@ jobs:
         uses: actions/download-artifact@v5
         with:
           path: artifacts
+          merge-multiple: true
+
+      - name: List artifacts (debug)
+        run: find artifacts -type f
 
       - name: Create Release (draft)
         uses: softprops/action-gh-release@v2
@@ -128,4 +132,4 @@ jobs:
           name: Varekai Client v${{ inputs.version }}
           body: ${{ inputs.notes }}
           draft: true
-          files: artifacts/**/*
+          files: artifacts/*
