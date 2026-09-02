@@ -1,0 +1,118 @@
+name: Build and Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Версия релиза (например, 1.0.0)'
+        required: true
+        type: string
+      notes:
+        description: 'Описание релиза'
+        required: false
+        type: string
+        default: ''
+
+jobs:
+  build:
+    strategy:
+      fail-fast: true  # Если одна платформа упала, прерываем все остальные
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows
+            arch: amd64
+          - os: windows-11-arm
+            platform: windows
+            arch: arm64
+          - os: ubuntu-latest
+            platform: linux
+            arch: amd64
+          - os: ubuntu-24.04-arm
+            platform: linux
+            arch: arm64
+          - os: macos-13
+            platform: macos
+            arch: amd64
+          - os: macos-latest
+            platform: macos
+            arch: arm64
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          pip install pyinstaller requests pyyaml pywebview
+          if [ "${{ matrix.platform }}" = "linux" ]; then
+            pip install pyside6 qtpy
+          fi
+
+      - name: Install Qt system libraries (Linux)
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qt6-base-dev qt6-webengine-dev qt6-webchannel-dev
+
+      - name: Build with PyInstaller
+        shell: bash
+        run: |
+          pyinstaller --onedir --name varekai-client main.py
+
+      - name: Package
+        shell: bash
+        run: |
+          cd dist
+          if [ "${{ matrix.platform }}" = "windows" ]; then
+            7z a ../varekai-client-${{ matrix.platform }}-${{ matrix.arch }}-v${{ inputs.version }}.zip varekai-client/
+          else
+            tar -czf ../varekai-client-${{ matrix.platform }}-${{ matrix.arch }}-v${{ inputs.version }}.tar.gz varekai-client/
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: varekai-client-${{ matrix.platform }}-${{ matrix.arch }}
+          path: varekai-client-${{ matrix.platform }}-${{ matrix.arch }}-v${{ inputs.version }}.*
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check if version exists
+        run: |
+          if git ls-remote --tags origin | grep -q "refs/tags/v${{ inputs.version }}"; then
+            echo "::error::Версия v${{ inputs.version }} уже существует. Укажите новую версию."
+            exit 1
+          fi
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create Release (draft)
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ inputs.version }}
+          name: Varekai Client v${{ inputs.version }}
+          body: ${{ inputs.notes }}
+          draft: true
+          files: artifacts/**/*
