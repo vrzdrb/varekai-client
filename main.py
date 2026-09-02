@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Mihomo Launcher - Кросс-платформенный лаунчер для mihomo
+Varekai-client
 """
 
 import os
@@ -18,11 +18,16 @@ import requests
 from pathlib import Path
 from datetime import datetime
 
+# При запуске из бинарника PyInstaller меняем рабочую директорию
+# на папку бинарника, чтобы все относительные пути (config.yaml, URL.txt и т.д.)
+# работали правильно, а не относительно папки _internal
 if getattr(sys, "frozen", False):
     os.chdir(Path(sys.executable).resolve().parent)
 else:
     os.chdir(Path(__file__).resolve().parent)
 
+# Сохраняем критические переменные окружения GUI-сессии при старте
+# (они могут потеряться при sudo -E)
 _gui_env_snapshot = {}
 if platform.system().lower() == "linux":
     for var in ("WAYLAND_DISPLAY", "DISPLAY", "XDG_RUNTIME_DIR",
@@ -30,9 +35,7 @@ if platform.system().lower() == "linux":
         val = os.environ.get(var)
         if val:
             _gui_env_snapshot[var] = val
-
-# На Linux принудительно используем PySide6 для Qt-бэкенда
-if platform.system().lower() == "linux":
+    # На Linux принудительно используем PySide6 для Qt-бэкенда
     os.environ.setdefault("QT_API", "pyside6")
 
 # === КОНСТАНТЫ ===
@@ -45,7 +48,8 @@ ZASHBOARD_DIR = Path("zashboard")
 ARCHIVES_DIR = Path("archives")
 MAX_ARCHIVES = 3  # Хранить latest + 2 предыдущих
 
-# Принудительный запрос прав администратора на старте (TUN-режим)
+# Принудительный запрос прав администратора на старте (только не на Linux:
+# там скрипт работает от пользователя, а ядро поднимается через pkexec)
 FORCE_ADMIN_AT_START = True
 
 # Шаблоны шумных строк Chromium, которые не пишем в лог панели
@@ -79,10 +83,6 @@ ASCII_HEADER = r"""
 # Глобальная переменная для хранения процесса ядра (если запущен из этого экземпляра)
 core_process = None
 
-# На Linux принудительно используем PySide6 для Qt-бэкенда
-if platform.system().lower() == "linux":
-    os.environ.setdefault("QT_API", "pyside6")
-
 
 # === УТИЛИТЫ ===
 def print_success(msg):
@@ -105,12 +105,16 @@ def clear_screen():
     if platform.system().lower() == "windows":
         os.system('cls')
     else:
+        # ANSI-коды вместо os.system('clear'): не запускаем sh,
+        # чтобы избежать конфликта упакованного в бинарник libreadline
+        # с системным (ошибка "undefined symbol: rl_print_keybinding")
         sys.stdout.write("\033[2J\033[H")
         sys.stdout.flush()
 
 def get_script_dir():
     """Возвращает директорию, где лежит скрипт (или бинарник)"""
     if getattr(sys, "frozen", False):
+        # sys.executable указывает на бинарник, а не на _internal
         return Path(sys.executable).resolve().parent
     return Path(__file__).resolve().parent
 
@@ -135,8 +139,9 @@ def restart_as_admin():
     try:
         if platform.system().lower() == "windows":
             import ctypes
+            params = subprocess.list2cmdline(sys.argv[1:]) if len(sys.argv) > 1 else None
             ctypes.windll.shell32.ShellExecuteW(
-                None, "runas", sys.executable, " ".join(sys.argv), None, 1
+                None, "runas", sys.executable, params, None, 1
             )
             sys.exit(0)
         elif platform.system().lower() == "darwin":
@@ -151,13 +156,6 @@ def restart_as_admin():
         else:
             # Linux: sudo с явной передачей GUI-переменных
             if shutil.which("sudo"):
-                sudo_args = ["sudo", "-E"]
-                # Явно добавляем критические GUI-переменные,
-                # т.к. sudo может их отфильтровать
-                for var, val in _gui_env_snapshot.items():
-                    sudo_args.append(f"{var}={val}")
-                sudo_args.extend(sys.argv)
-                # Переключаем на команду: sudo -E env VAR=val ... python ./main.py
                 os.execvp("sudo", ["sudo", "-E", "env"] +
                           [f"{k}={v}" for k, v in _gui_env_snapshot.items()] +
                           sys.argv)
@@ -869,6 +867,7 @@ def stop_core():
     else:
         print_error("Не удалось остановить ядро")
 
+
 # === ПАНЕЛЬ УПРАВЛЕНИЯ ===
 def _start_stderr_filter(log_path):
     """Пропускает stderr Chromium через фильтр: шум отбрасывается,
@@ -895,44 +894,6 @@ def _start_stderr_filter(log_path):
     except Exception:
         pass
 
-def setup_persistent_profile():
-    """Настраивает сохранение настроек панели (язык, тема и т.д.) между запусками"""
-    if get_os() != "linux":
-        return
-    try:
-        from qtpy.QtWidgets import QApplication
-        from qtpy import QtCore
-
-        # Стабильное имя приложения = стабильные пути профиля QtWebEngine
-        QtCore.QCoreApplication.setOrganizationName("VarekaiLauncher")
-        QtCore.QCoreApplication.setApplicationName("VarekaiLauncher")
-
-        app = QApplication.instance() or QApplication([sys.argv[0]])
-
-        # Qt6: инициализация WebEngine ДО работы с профилем
-        try:
-            from qtpy.QtWebEngineCore import QtWebEngine
-            QtWebEngine.initialize()
-        except Exception:
-            pass
-
-        from qtpy.QtWebEngineCore import QWebEngineProfile
-        profile = QWebEngineProfile.defaultProfile()
-        profile_dir = get_script_dir() / PROFILE_DIR
-        profile_dir.mkdir(exist_ok=True)
-        profile.setPersistentStoragePath(str(profile_dir))
-        profile.setCachePath(str(profile_dir / "cache"))
-        try:
-            profile.setPersistentCookiesPolicy(
-                QWebEngineProfile.PersistentCookiesPolicy.ForcePersistentCookies
-            )
-        except Exception:
-            profile.setPersistentCookiesPolicy(2)  # ForcePersistentCookies
-
-        print_success(f"Persistent profile настроен: {profile_dir}")
-    except Exception as e:
-        print_error(f"Не удалось настроить persistent profile: {e}")
-
 def open_dashboard():
     """Открывает панель в окне самого скрипта.
     Закрытие окна панели = выход из программы (ядро продолжает работать)."""
@@ -940,13 +901,15 @@ def open_dashboard():
 
     # Шум Chromium уходит в файл с временными метками
     _start_stderr_filter(script_dir / DASHBOARD_LOG)
+
     setup_gui_environment()
 
     port = 9090
     secret = ""
+
     try:
         import yaml
-        config_path = Path("config.yaml")
+        config_path = script_dir / "config.yaml"
         if config_path.exists():
             with open(config_path, "r", encoding="utf-8") as f:
                 config = yaml.safe_load(f)
@@ -979,7 +942,7 @@ def open_dashboard():
         webview.start(
             gui="qt" if get_os() == "linux" else None,
             private_mode=False,
-            storage_path=str(get_script_dir() / PROFILE_DIR)
+            storage_path=str(script_dir / PROFILE_DIR)
         )
     except ImportError:
         print_error("Библиотека pywebview не найдена.")
@@ -991,6 +954,7 @@ def open_dashboard():
     # Окно закрыли — выходим (ядро НЕ трогаем, оно работает независимо)
     print_info("Панель закрыта. Выход...")
     sys.exit(0)
+
 
 # === ФУНКЦИИ МЕНЮ ===
 def menu_update_and_run_with_dashboard():
@@ -1039,8 +1003,6 @@ def menu_update_and_run_without_dashboard():
         if start_core():
             time.sleep(3)
             update_profile()
-
-    input(f"\n{YELLOW}Нажмите Enter для продолжения...{RESET}")
 
     input(f"\n{YELLOW}Нажмите Enter для продолжения...{RESET}")
 
@@ -1143,6 +1105,7 @@ def show_menu():
     print_menu_item("0", "Выход")
     print_purple("=" * 70)
 
+
 # === ГЛАВНАЯ ФУНКЦИЯ ===
 def main():
     """Главная функция программы"""
@@ -1151,7 +1114,8 @@ def main():
     # Создаём необходимые директории
     ensure_dirs()
 
-    # Принудительный запрос прав администратора (TUN-режим)
+    # Принудительный запрос прав администратора (только не на Linux:
+    # там GUI должен работать от пользователя, а ядро поднимается через pkexec)
     if FORCE_ADMIN_AT_START and get_os() != "linux" and not is_admin():
         print_info("Для работы программы требуются права администратора (TUN-режим).")
         print_info("Перезапуск с правами администратора...")
@@ -1197,11 +1161,12 @@ def main():
             menu_stop_vpn()
         elif choice == "0":
             print_info("Выход...")
-            # Ядро и панель продолжают работать независимо
+            # Ядро продолжает работать независимо
             sys.exit(0)
         else:
             print_error("Неверный выбор")
             time.sleep(1)
+
 
 if __name__ == "__main__":
     main()
