@@ -18,8 +18,11 @@ import requests
 from pathlib import Path
 from datetime import datetime
 
-# Сохраняем критические переменные окружения GUI-сессии при старте
-# (они могут потеряться при sudo -E или multiprocessing)
+if getattr(sys, "frozen", False):
+    os.chdir(Path(sys.executable).resolve().parent)
+else:
+    os.chdir(Path(__file__).resolve().parent)
+
 _gui_env_snapshot = {}
 if platform.system().lower() == "linux":
     for var in ("WAYLAND_DISPLAY", "DISPLAY", "XDG_RUNTIME_DIR",
@@ -106,7 +109,9 @@ def clear_screen():
         sys.stdout.flush()
 
 def get_script_dir():
-    """Возвращает директорию, где лежит скрипт"""
+    """Возвращает директорию, где лежит скрипт (или бинарник)"""
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
     return Path(__file__).resolve().parent
 
 
