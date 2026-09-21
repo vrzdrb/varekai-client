@@ -5,7 +5,7 @@
 | ![Preview 1](assets/preview_1.png) | ![Preview 2](assets/preview_2.png) |
 |:---:|:---:|
 
-A cross-platform launcher for the Prizrak-Core kernel [prizrak-core](https://github.com/legiz-ru/Prizrak-Core) with the [zashboard](https://github.com/Zephyruso/zashboard) web panel.
+A cross-platform launcher for the [Prizrak-Core kernel](https://github.com/legiz-ru/Prizrak-Core) with the [Zashboard](https://github.com/Zephyruso/zashboard) web panel.
 It downloads and updates the core, your subscription config and the panel,
 starts the VPN and opens the dashboard. Maximum simplicity for everyone.
 

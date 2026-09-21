@@ -5,7 +5,7 @@
 | ![Preview 1](assets/preview_ru_1.png) | ![Preview 2](assets/preview_ru_2.png) |
 |:---:|:---:|
 
-Кроссплатформенный лаунчер ядра Prizrak-Core [prizrak-core](https://github.com/legiz-ru/Prizrak-Core) с веб-панелью [zashboard](https://github.com/Zephyruso/zashboard).
+Кроссплатформенный лаунчер ядра [Prizrak-Core](https://github.com/legiz-ru/Prizrak-Core) с веб-панелью [Zashboard](https://github.com/Zephyruso/zashboard).
 Сам скачивает и обновляет ядро, ваш конфиг и панель, запускает VPN и открывает панель управления. Максимальная простота меню для пользователя любого уровня подготовки.
 
 ## Возможности
