@@ -1,93 +1,64 @@
-# varekai-client
+# Varekai Client
 
-<img width="646" height="552" alt="preview" src="https://github.com/user-attachments/assets/a46a8ddf-688d-476c-a5c8-3638834739f4" />
+**English** | [Русский](README.ru.md)
 
-=======
+| ![Preview 1](assets/preview_1.png) | ![Preview 2](assets/preview_2.png) |
+|:---:|:---:|
 
-Кроссплатформенный лаунчер ядра mihomo с графической панелью управления
-zashboard. Cам скачивает / обновляет ядро, ваш конфигурационный файл и панель,
-запускает VPN и открывает панель управления
+A cross-platform launcher for the Prizrak-Core kernel [prizrak-core](https://github.com/legiz-ru/Prizrak-Core) with the [zashboard](https://github.com/Zephyruso/zashboard) web panel.
+It downloads and updates the core, your subscription config and the panel,
+starts the VPN and opens the dashboard. Maximum simplicity for everyone.
 
-## Возможности
+## Features
 
-- При каждом запуске самостоятельно обновляет mihomo, zashboard и ваш конфиг
-- Запускает VPN в TUN-режиме (с правами администратора)
-- Открывает панель управления в отдельном окне
-- Хранит три последние версии ядра и умеет откатываться назад
-- Ядро работает независимо от программы: закрыли меню или терминал — VPN не упал
-- Панель работает на встроенном Chromium (QtWebEngine) и сохраняет настройки пользователя
+- Updates the core, the dashboard and your config on every run, with GitHub mirror fallback for blocked regions. You can add you own mirrors
+- Injects "smart" proxy-group strategies into your config toggleable in the menu "Additional settings"
+- Runs the VPN in TUN mode (requires admin/root)
+- Opens the dashboard in its own window: bundled Chromium (Linux), system WebView2 (Windows), system WebKit (macOS)
+- Keeps the last 3 core versions and can roll back
+- The core runs independently: closing the launcher does not stop the VPN
+- Russian and Englis languages (menu item 6)
+- You can configure your Zashboard layout settings; they are saved in /zashboard-profile.
 
-## Поддерживаемые платформы
+## Supported platforms
 
-| Платформа | Архитектуры |
-|---|---|
-| Windows 10/11 | x86_64 |
-| MacOS 11+ | Apple Silicon, Intel |
-| Linux (любой дистрибутив с GUI) | x86_64, arm64 |
+| OS | Architectures |
+| --- | --- |
+| Windows 10/11 | x86_64, ARM64 |
+| Linux (any distro with a GUI) | x86_64, ARM64 |
+| macOS 11+ | Apple Silicon |
 
-## Требования
+## Requirements
 
-### Windows
-- Windows 10/11, запуск от администратора
-- WebView2 Runtime — входит в Edge; если панель не
-  открылась, установите Evergreen-runtime с сайта Microsoft
+- **Windows:** WebView2 runtime (ships with Edge); run as administrator
+- **Linux:** polkit (`pkexec`) or sudo; standard desktop libraries (OpenGL, fontconfig, D-Bus, NSS)
+- **macOS:** if Gatekeeper complains on first run — right click → Open, or `xattr -d com.apple.quarantine varekai-client`
 
-### MacOS
-- MacOS 11+
-- Запуск из Terminal:
+## Installation (now - only from source)
+
 ```bash
-./varekai
+git clone https://github.com/vrzdrb/varekai-client
+cd varekai-client
+python -m venv .venv
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+python main.py
 ```
-- Если система блокирует приложение: ПКМ → «Открыть», либо в терминале:
-```bash
-xattr -d com.apple.quarantine varekai
-```
-- Пароль администратора при запуске
 
-### Linux
-- Любой дистрибутив с Wayland или X11
-- polkit (`pkexec`)
-- Стандартные системные библиотеки DE (OpenGL, fontconfig, D-Bus, NSS)
+## Usage
 
-## Установка
+1. Start the program and pick menu item **1**: the core, your config and the panel are downloaded/updated, the VPN starts and the dashboard opens.
+2. Closing the dashboard window exits the launcher but **does not stop the VPN**. To stop the VPN - oly use menu item **5**.
+3. Depending on your needs, you can launch the VPN without the panel / without an update / open the panel without restarting the VPN / enable or disable smart strategies, etc. See "Advanced Settings."
 
-1. Скачайте архив под вашу ОС из Releases и распакуйте в любую папку
-   (на Windows — не в Program Files)
-2. Запустите:
-   - Windows: `varekai.exe` от администратора
-   - Linux: `./varekai` в терминале из папки программы
-   - macOS: `./varekai` в Terminal
-3. Выберите пункт **1** — ядро, конфиг и панель скачаются / обновятся, VPN запустится,
-   откроется панель управления
+## Files created at runtime
 
-**Важно:** закрытие окна программы или терминала НЕ останавливает VPN — ядро
-продолжает работать в фоне. **Остановка — только пункт 9.**
-
-## Структура:
-
-- `config.yaml` — ваш конфиг в формате .yaml (скачивается по ссылке из URL.txt)
-- `mihomo-core` / `mihomo-core.exe` — ядро
-- `archives/` — архивы ядра для отката
-- `zashboard/` — панель управления
-- `zashboard-profile/` — настройки панели (язык, тема, заставка и т.д.)
-- `mihomo-core.log`, `zashboard.log` — логи для диагностики
-
-## Сборка из исходников (для разработчиков)
-
-- Python 3.10+
-```bash
-pip install requests pyyaml pywebview
-```
-- Linux дополнительно: `pyside6`, `qtpy`, `qt6-webengine`, `qt6-webchannel`
-- Arch:
-```bash
-pacman -S pyside6 python-qtpy qt6-webengine qt6-webchannel
-```
-- Сборка:
-```bash
-pyinstaller --onedir --console --name varekai main.py
-```
-  на Windows:
-```bash
-pyinstaller --onedir --uac-admin --console --name varekai main.py`
-```
+- `config.yaml` — your subscription config (downloaded from the link in `URL.txt`)
+- `smart-config.yaml` — PC config generated from `config.yaml` with injected smart-groups
+- `prizrak-core` / `prizrak-core.exe` — the kernel
+- `archives/` — core archives for rollback
+- `zashboard/` — the web panel
+- `zashboard-profile/` — panel settings (language, theme, wallpaper…)
+- `mirrors.txt` — GitHub mirrors used when github.com is unreachable
+- `settings.json` — launcher settings (smart-strategy, menu language)
+- `VPN.log`, `panel.log` — logs for troubleshooting

@@ -49,9 +49,9 @@ jobs:
       - name: Install dependencies
         shell: bash
         run: |
-          pip install pyinstaller requests pyyaml pywebview
+          pip install pyinstaller requests ruamel.yaml pywebview
           if [ "${{ matrix.platform }}" = "linux" ]; then
-            pip install pyside6 qtpy
+            pip install "PySide6==6.11.2" qtpy
           fi
 
       - name: Install Qt system libraries (Linux)
@@ -60,14 +60,23 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y qt6-base-dev qt6-webengine-dev qt6-webchannel-dev libxcb-cursor0 libpulse0
 
+      - name: Create mirrors list
+        shell: bash
+        run: |
+          cat > mirrors.txt << 'EOF'
+          https://ghproxy.net/
+          https://ghfast.top/
+          https://gh-proxy.org/
+          EOF
+
       - name: Create desktop launcher (Linux)
         if: matrix.platform == 'linux'
         shell: bash
         run: |
           cat > START.desktop << 'EOF'
           [Desktop Entry]
-          Name=Varekai Client
-          Comment=Скрипт для запуска mihomo + zashboard с автообновлением
+          Name=START
+          Comment=Скрипт для запуска prizrak-core + zashboard с автообновлением
           Exec=bash -c 'for t in gnome-terminal konsole xfce4-terminal alacritty kitty wezterm xterm foot; do if command -v $t &>/dev/null; then exec $t -e ./varekai-client; fi; done'
           Icon=terminal
           Terminal=false
@@ -80,8 +89,9 @@ jobs:
         shell: bash
         run: |
           pyinstaller --onedir --name varekai-client main.py
-          # Профиль панели кладём рядом с бинарником (НЕ в _internal!)
+          # Профиль панели и список зеркал кладём рядом с бинарником (НЕ в _internal!)
           cp -r zashboard-profile dist/varekai-client/
+          cp mirrors.txt dist/varekai-client/
           if [ "${{ matrix.platform }}" = "linux" ]; then
             cp START.desktop dist/varekai-client/
           fi

@@ -1,24 +1,48 @@
-# Персональное
+# === Персональные данные ===
 URL.txt
 config.yaml
 
-# Скачивается/создаётся программой
-mihomo-core
-mihomo-core.exe
-archives/
-zashboard/
-unified/
-temp_extract/
+# === Генерируемые конфиги и локальные настройки ===
+smart-config.yaml
+settings.json
+mirrors.txt
 
-# Рантайм mihomo
+# === Ядро и рантайм-файлы ===
+prizrak-core
+prizrak-core.exe
+*.log
 cache.db
 ASN.mmdb
 country.mmdb
 geoip.dat
 geosite.dat
 
-# Логи
-*.log
+# === Скачанное и генерируемое ===
+archives/
+zashboard/
+unified/
+temp_extract/
+zashboard_temp.zip
+START.desktop
 
-# Python
+# === Профиль панели: храним только настройки ===
+zashboard-profile/*
+!zashboard-profile/Local Storage/
+!zashboard-profile/IndexedDB/
+!zashboard-profile/blob_storage/
+!zashboard-profile/WebStorage/
+!zashboard-profile/*.jpg
+!zashboard-profile/*.jpeg
+!zashboard-profile/*.png
+!zashboard-profile/*.webp
+
+# === Python / сборка ===
 __pycache__/
+*.py[cod]
+*.spec
+build/
+dist/
+
+# === Мусор ОС ===
+.DS_Store
+Thumbs.db
