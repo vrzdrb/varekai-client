@@ -35,6 +35,13 @@ zashboard-profile/*
 !zashboard-profile/*.jpeg
 !zashboard-profile/*.png
 !zashboard-profile/*.webp
+# Windows-сид профиля (WebView2): только настройки и блобы
+!zashboard-profile/EBWebView/
+zashboard-profile/EBWebView/*
+!zashboard-profile/EBWebView/Default/
+zashboard-profile/EBWebView/Default/*
+!zashboard-profile/EBWebView/Default/Local Storage/
+!zashboard-profile/EBWebView/Default/IndexedDB/
 
 # === Python / сборка ===
 __pycache__/

@@ -486,7 +486,7 @@ def start_core():
                 print_info(t("start_mac_hint"))
                 return False
         else:
-            # Мы уже root
+            # Мы уже root/admin
             env = os.environ.copy()
             env["SAFE_PATHS"] = str(ui_path)
             cmd = base_cmd
@@ -540,6 +540,7 @@ def start_core():
 
         print_success(t("started", pid=pid))
         return True
+
     except PermissionError:
         print_error(t("start_no_perm"))
         if get_os() != "windows":

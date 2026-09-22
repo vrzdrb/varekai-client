@@ -145,3 +145,18 @@ def ensure_dirs():
     """Создаёт необходимые директории"""
     ARCHIVES_DIR.mkdir(exist_ok=True)
     ZASHBOARD_DIR.mkdir(exist_ok=True)
+
+def setup_console():
+    """Включает ANSI-цвета в консоли Windows (conhost)"""
+    if platform.system().lower() != "windows":
+        return
+    try:
+        import ctypes
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.GetStdHandle(-11)  # STDOUT
+        mode = ctypes.c_ulong()
+        if kernel32.GetConsoleMode(handle, ctypes.byref(mode)):
+            # 0x0004 = ENABLE_VIRTUAL_TERMINAL_PROCESSING
+            kernel32.SetConsoleMode(handle, mode.value | 0x0004)
+    except Exception:
+        pass

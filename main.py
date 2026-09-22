@@ -14,7 +14,7 @@ if getattr(sys, "frozen", False):
 else:
     os.chdir(Path(__file__).resolve().parent)
 
-from utils import print_info, print_error, is_admin, restart_as_admin, ensure_dirs, get_os
+from utils import print_info, print_error, is_admin, restart_as_admin, ensure_dirs, get_os, setup_console
 from constants import FORCE_ADMIN_AT_START, YELLOW, RESET
 from i18n import t
 from core import load_profile_url
@@ -25,6 +25,7 @@ from menu import (show_menu, menu_update_and_run_with_dashboard,
 
 def main():
     """Главная функция программы"""
+    setup_console()
     ensure_dirs()
 
     if FORCE_ADMIN_AT_START and get_os() != "linux" and not is_admin():

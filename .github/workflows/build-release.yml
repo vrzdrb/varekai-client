@@ -85,6 +85,19 @@ jobs:
           GenericName=Мы идём дальше
           EOF
 
+      - name: Create starter (Windows)
+        if: matrix.platform == 'windows'
+        shell: bash
+        run: |
+          printf '@echo off\r\ncd /d "%%~dp0"\r\nvarekai-client.exe\r\n' > START.bat
+
+      - name: Create starter (macOS)
+        if: matrix.platform == 'macos'
+        shell: bash
+        run: |
+          printf '#!/bin/bash\ncd "$(dirname "$0")"\n./varekai-client\n' > START.command
+          chmod +x START.command
+
       - name: Build with PyInstaller
         shell: bash
         run: |
@@ -94,6 +107,10 @@ jobs:
           cp mirrors.txt dist/varekai-client/
           if [ "${{ matrix.platform }}" = "linux" ]; then
             cp START.desktop dist/varekai-client/
+          elif [ "${{ matrix.platform }}" = "windows" ]; then
+            cp START.bat dist/varekai-client/
+          elif [ "${{ matrix.platform }}" = "macos" ]; then
+            cp START.command dist/varekai-client/
           fi
 
       - name: Package

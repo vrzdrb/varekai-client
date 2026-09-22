@@ -1,5 +1,5 @@
 from ruamel.yaml import YAML
-from utils import print_success, print_error
+from utils import print_success, print_error, get_os
 from settings import load_settings
 from constants import CONFIG_CLEAN, CONFIG_SMART
 from i18n import t
@@ -26,25 +26,28 @@ def dump_config_rt(data, path):
 
 def generate_smart_config():
     """Генерирует smart-config.yaml из config.yaml.
-    При включённых смарт-стратегиях: группы url-test/load-balance становятся
-    type: smart (uselightgbm: false, collectdata: true, strategy: sticky-sessions),
-    tolerance удаляется, глобально smart-collector-size: 100.
-    При выключенных — чистая копия конфига."""
+    Всегда (для ПК): strict-route: false на Windows (firewall rules
+    блокируют DoH-трафик ядра, ломая DIRECT).
+    При включённых смарт-стратегиях: группы url-test/load-balance → type: smart
+    + strategy: sticky-sessions, tolerance удаляется.
+    При выключенных — копия конфига с тем же TUN-оверрайдом."""
     if not CONFIG_CLEAN.exists():
-        print_error(t("cfg_no_clean"))
+        print_error("Чистый конфиг (config.yaml) не найден")
         return False
 
     try:
         settings = load_settings()
         config = load_config_rt(CONFIG_CLEAN)
 
-        if settings.get("smart_enabled", True):
-            # Глобально: лимит коллектора (МБ)
-            if "profile" not in config or config["profile"] is None:
-                config["profile"] = {}
-            config["profile"]["smart-collector-size"] = 100
+        # Windows-specific: strict-route добавляет firewall rules,
+        # режущие исходящий DNS-трафик самого ядра (DoH к nameserver'ам).
+        # На Linux strict-route работает через fwmark и своего трафика не трогает.
+        if get_os() == "windows":
+            tun = config.get("tun")
+            if isinstance(tun, dict):
+                tun["strict-route"] = False
 
-            # Модифицируем существующие группы, новых не создаём
+        if settings.get("smart_enabled", True):
             if "proxy-groups" in config and isinstance(config["proxy-groups"], list):
                 for group in config["proxy-groups"]:
                     if not isinstance(group, dict):
@@ -52,16 +55,41 @@ def generate_smart_config():
                     group_type = str(group.get("type", "")).lower()
                     if group_type in ("url-test", "load-balance"):
                         group["type"] = "smart"
-                        group["uselightgbm"] = False
-                        group["collectdata"] = True
                         group["strategy"] = "sticky-sessions"
-                        # tolerance — понятие из url-test, в smart не нужен
                         if "tolerance" in group:
                             del group["tolerance"]
 
         dump_config_rt(config, CONFIG_SMART)
-        print_success(t("cfg_generated", path=CONFIG_SMART))
+
+        # Постобработка пустых строк вокруг strategy: sticky-sessions
+        with open(CONFIG_SMART, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+
+        cleaned = []
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            # Убираем пустую строку перед strategy:
+            if line.strip() == "" and i + 1 < len(lines):
+                next_line = lines[i + 1].strip()
+                if next_line.startswith("strategy:"):
+                    i += 1
+                    continue
+            cleaned.append(line)
+            # Добавляем пустую строку после strategy: sticky-sessions
+            if "strategy: sticky-sessions" in line:
+                if i + 1 >= len(lines) or (
+                    lines[i + 1].strip() != ""
+                    and not lines[i + 1].strip().startswith("- name:")
+                ):
+                    cleaned.append("\n")
+            i += 1
+
+        with open(CONFIG_SMART, "w", encoding="utf-8") as f:
+            f.writelines(cleaned)
+
+        print_success(f"Сгенерирован {CONFIG_SMART}")
         return True
     except Exception as e:
-        print_error(t("cfg_error", error=e))
+        print_error(f"Ошибка генерации smart-config: {e}")
         return False

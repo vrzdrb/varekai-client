@@ -34,7 +34,7 @@ def _start_stderr_filter(log_path):
 
 def open_dashboard():
     """Открывает панель в окне самого скрипта.
-    Закрытие окна панели = выход из программы (ядро продолжает работать)."""
+    Закрытие окна панели возвращает нас в главное меню (ядро продолжает работать)."""
     script_dir = get_script_dir()
     _start_stderr_filter(script_dir / DASHBOARD_LOG)
     setup_gui_environment()
@@ -63,7 +63,7 @@ def open_dashboard():
     try:
         import webview
         webview.create_window(
-            title="Varekai Dashboard",
+            title="zashboard",  # ← настоящее название панели
             url=dashboard_url,
             width=1200,
             height=800,
@@ -82,5 +82,6 @@ def open_dashboard():
         print_error(t("dash_error", error=e))
         return
 
+    # Окно закрыли — НЕ выходим из программы, просто возвращаемся в цикл меню
     print_info(t("dash_closed"))
-    sys.exit(0)
+    return  # ← вместо sys.exit(0)
