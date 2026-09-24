@@ -87,18 +87,20 @@ jobs:
       - name: Build with PyInstaller
         shell: bash
         run: |
-          # Имя выходного файла = START.exe / START / START.app (единообразие)
-          pyinstaller --onedir --name START main.py
+          # Собираем под оригинальным именем папки
+          pyinstaller --onedir --name varekai-client main.py
           
-          # Копируем профиль панели и список зеркал рядом с бинарником
-          cp -r zashboard-profile dist/START/
-          cp mirrors.txt dist/START/
+          # Переименовываем только бинарник на Windows
+          if [ "${{ matrix.platform }}" = "windows" ]; then
+            mv dist/varekai-client/varekai-client.exe dist/varekai-client/START.exe
+          fi
           
-          # Добавляем стартеры для Linux/macOS
+          cp -r zashboard-profile dist/varekai-client/
+          cp mirrors.txt dist/varekai-client/
           if [ "${{ matrix.platform }}" = "linux" ]; then
-            cp START.desktop dist/START/
+            cp START.desktop dist/varekai-client/
           elif [ "${{ matrix.platform }}" = "macos" ]; then
-            cp START.command dist/START/
+            cp START.command dist/varekai-client/
           fi
 
       - name: Package
@@ -106,9 +108,9 @@ jobs:
         run: |
           cd dist
           if [ "${{ matrix.platform }}" = "windows" ]; then
-            7z a ../varekai-client-${{ matrix.platform }}-${{ matrix.arch }}-v${{ inputs.version }}.zip START/
+            7z a ../varekai-client-${{ matrix.platform }}-${{ matrix.arch }}-v${{ inputs.version }}.zip varekai-client/
           else
-            tar -czf ../varekai-client-${{ matrix.platform }}-${{ matrix.arch }}-v${{ inputs.version }}.tar.gz START/
+            tar -czf ../varekai-client-${{ matrix.platform }}-${{ matrix.arch }}-v${{ inputs.version }}.tar.gz varekai-client/
           fi
 
       - name: Upload artifact
