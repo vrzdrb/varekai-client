@@ -40,7 +40,7 @@ STRINGS = {
         # Профиль подписки
         "prof_not_found": "Файл конфигурации не найден.",
         "prof_paste": "Вставьте ссылку на профиль с настройками.",
-        "prof_paste_hint": "Для вставки используйте: Ctrl+Shift+V или Shift+Insert",
+        "prof_paste_hint": "Для вставки используйте правую кнопку мыши или Shift+Insert",
         "prof_prompt": "Ссылка на профиль: ",
         "prof_saved": "Ссылка сохранена в URL.txt",
         "prof_current": "Текущая ссылка: {url}",
@@ -172,7 +172,7 @@ STRINGS = {
         # Subscription profile
         "prof_not_found": "Config file not found.",
         "prof_paste": "Paste your subscription profile URL.",
-        "prof_paste_hint": "To paste: Ctrl+Shift+V or Shift+Insert",
+        "prof_paste_hint": "To paste: right mouse button or Shift+Insert",
         "prof_prompt": "Profile URL: ",
         "prof_saved": "URL saved to URL.txt",
         "prof_current": "Current URL: {url}",
