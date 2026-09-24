@@ -2,7 +2,7 @@ import os
 import sys
 import threading
 from datetime import datetime
-from utils import print_info, print_error, get_os, get_script_dir, setup_gui_environment
+from utils import print_info, print_error, get_script_dir, setup_gui_environment
 from config import load_config_rt
 from constants import DASHBOARD_LOG, PROFILE_DIR, CONFIG_CLEAN, DASHBOARD_NOISE
 from i18n import t
@@ -32,8 +32,9 @@ def _start_stderr_filter(log_path):
     except Exception:
         pass
 
+
 def open_dashboard():
-    """Открывает панель в окне самого скрипта.
+    """Открывает панель в окне самого скрипта (QtWebEngine на всех ОС).
     Закрытие окна панели возвращает нас в главное меню (ядро продолжает работать)."""
     script_dir = get_script_dir()
     _start_stderr_filter(script_dir / DASHBOARD_LOG)
@@ -63,7 +64,7 @@ def open_dashboard():
     try:
         import webview
         webview.create_window(
-            title="zashboard",  # ← настоящее название панели
+            title="zashboard",
             url=dashboard_url,
             width=1200,
             height=800,
@@ -71,7 +72,7 @@ def open_dashboard():
         )
         print_info(t("dash_opened"))
         webview.start(
-            gui="qt" if get_os() == "linux" else None,
+            gui="qt",
             private_mode=False,
             storage_path=str(script_dir / PROFILE_DIR)
         )
@@ -84,4 +85,4 @@ def open_dashboard():
 
     # Окно закрыли — НЕ выходим из программы, просто возвращаемся в цикл меню
     print_info(t("dash_closed"))
-    return  # ← вместо sys.exit(0)
+    return
