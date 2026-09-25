@@ -1,162 +1,301 @@
 import os
 import sys
+import json
 import platform
 import shutil
 import subprocess
 from pathlib import Path
-from constants import (PURPLE, YELLOW, GREEN, RED, RESET,
-                       _gui_env_snapshot, ARCHIVES_DIR, ZASHBOARD_DIR)
-from i18n import t
 
+# === КОНСТАНТЫ ===
+URL_FILE = Path("URL.txt")
+CORE_BINARY = "prizrak-core.exe" if platform.system().lower() == "windows" else "prizrak-core"
+CORE_LOG = Path("VPN.log")
+ARCHIVES_DIR = Path("archives")
+CONFIG_CLEAN = Path("config.yaml")
+CONFIG_SMART = Path("smart-config.yaml")
+MIRRORS_FILE = Path("mirrors.txt")
+SETTINGS_FILE = Path("settings.json")
 
-def print_success(msg):
-    print(f"{GREEN}[+] {msg}{RESET}")
+CORE_REPO = "legiz-ru/Prizrak-Core"
+MAX_ARCHIVES = 3
+FORCE_ADMIN_AT_START = True
 
-def print_error(msg):
-    print(f"{RED}[-] {msg}{RESET}")
+DEFAULT_MIRRORS = [
+    "https://ghproxy.net/",
+    "https://ghfast.top/",
+    "https://gh-proxy.org/",
+]
 
-def print_info(msg):
-    print(f"{YELLOW}{msg}{RESET}")
+DEFAULT_SETTINGS = {"language": "ru"}
 
-def print_purple(msg):
-    print(f"{PURPLE}{msg}{RESET}")
+# === ЛОКАЛИЗАЦИЯ ===
+STRINGS = {
+    "ru": {
+        "not_installed": "не установлено",
+        "status_running": "VPN: ЗАПУЩЕН",
+        "status_stopped": "VPN: ОСТАНОВЛЕН",
+        "btn_toggle_on": "▶ ЗАПУСТИТЬ VPN",
+        "btn_toggle_off": "■ ОСТАНОВИТЬ VPN",
+        "btn_update_run": "🔄 Обновить и запустить",
+        "btn_logs": "📜 Логи",
+        "brief_starting": "Запуск VPN...",
+        "brief_stopping": "Остановка VPN...",
+        "brief_checking": "Проверка обновлений...",
+        "brief_updating_profile": "Обновление профиля...",
+        "brief_refreshed": "Статус обновлён",
+        "brief_lang_changed": "Язык изменён на: {lang}",
+        "tab_groups": "Группы:",
+        "tab_nodes": "Серверы:",
+        "col_group": "Группа",
+        "col_type": "Тип",
+        "col_current": "Текущая",
+        "col_domain": "Адрес / домен",
+        "col_server": "Сервер",
+        "col_rule": "Правило",
+        "col_dspeed": "↓ Скорость",
+        "col_dtotal": "↓ Загружено",
+        "col_uspeed": "↑ Скорость",
+        "col_utotal": "↑ Выгружено",
+        "col_terminate": "Прервать",
+        "col_node": "Сервер",
+        "col_latency": "Задержка",
+        "col_status": "Статус",
+        "label_group": "Группа:",
+        "select_prompt": "Выберите группу",
+        "current_country": "Текущая страна: {country}",
+        "country_unknown": "не определена",
+        "switch_ok": "{group}: выбран сервер {node}",
+        "switch_fail": "Не удалось переключить группу {group}",
+        "reset_auto": "⟳ Вернуть автовыбор",
+        "reset_auto_ok": "Автовыбор восстановлен",
+        "reset_auto_fail": "Не удалось восстановить автовыбор",
+        "no_connection": "нет подключения",
+        "log_app": "Лог приложения",
+        "log_core": "Лог ядра",
+        "conn_title": "Активные подключения",
+        "conn_close": "✕ Закрыть",
+        "conn_close_all": "Прервать все",
+        "conn_empty": "Нет активных подключений",
+        "conn_del_fail": "Не удалось закрыть соединение",
+        "key_quit": "Выход",
+        "key_toggle": "Вкл / Выкл VPN",
+        "key_refresh": "Обновить",
+        "key_connections": "Подключения",
+        "key_close_conn": "Закрыть",
+        "key_lang": "Язык",
+        "lang_current_name": "Русский",
+        "admin_required": "Для работы программы требуются права администратора (TUN-режим).",
+        "admin_restart": "Перезапуск с правами администратора...",
+        "admin_failed": "Не удалось получить права администратора.",
+        "press_enter_exit": "Нажмите Enter для выхода...",
+        "exiting": "Выход...",
+        "elev_no_mech": "Не найден механизм для запуска с правами администратора",
+        "elev_error": "Ошибка при запросе прав администратора: {error}",
+        "prof_not_found": "Файл конфигурации не найден.",
+        "prof_paste": "Вставьте ссылку на профиль с настройками.",
+        "prof_paste_hint": "Для вставки используйте правую кнопку мыши или Shift+Insert",
+        "prof_prompt": "Ссылка на профиль: ",
+        "prof_saved": "Ссылка сохранена в URL.txt",
+        "val_empty": "Ссылка не задана",
+        "val_bad": "Некорректная ссылка",
+        "val_scheme": "Ссылка должна начинаться с http:// или https://",
+        "gh_all_fail": "Все источники скачивания недоступны",
+        "gh_tag_fail": "Не удалось определить версию последнего релиза",
+    },
+    "en": {
+        "not_installed": "not installed",
+        "status_running": "VPN: RUNNING",
+        "status_stopped": "VPN: STOPPED",
+        "btn_toggle_on": "▶ START VPN",
+        "btn_toggle_off": "■ STOP VPN",
+        "btn_update_run": "🔄 Update & Start",
+        "btn_logs": "📜 Logs",
+        "brief_starting": "Starting VPN...",
+        "brief_stopping": "Stopping VPN...",
+        "brief_checking": "Checking updates...",
+        "brief_updating_profile": "Updating profile...",
+        "brief_refreshed": "Status refreshed",
+        "brief_lang_changed": "Language changed to: {lang}",
+        "tab_groups": "Groups:",
+        "tab_nodes": "Server:",
+        "col_group": "Group",
+        "col_type": "Type",
+        "col_current": "Current",
+        "col_domain": "Address / domain",
+        "col_server": "Server",
+        "col_rule": "Rule",
+        "col_dspeed": "↓ Speed",
+        "col_dtotal": "↓ Downloaded",
+        "col_uspeed": "↑ Speed",
+        "col_utotal": "↑ Uploaded",
+        "col_terminate": "Close",
+        "col_node": "Server",
+        "col_latency": "Latency",
+        "col_status": "Status",
+        "label_group": "Group:",
+        "select_prompt": "Select group",
+        "current_country": "Current country: {country}",
+        "country_unknown": "unknown",
+        "switch_ok": "{group}: server {node} selected",
+        "switch_fail": "Failed to switch group {group}",
+        "reset_auto": "⟳ Restore auto-select",
+        "reset_auto_ok": "Auto-select restored",
+        "reset_auto_fail": "Failed to restore auto-select",
+        "no_connection": "no connection",
+        "log_app": "App log",
+        "log_core": "Core log",
+        "conn_title": "Active connections",
+        "conn_close": "✕ Close",
+        "conn_close_all": "Close all",
+        "conn_empty": "No active connections",
+        "conn_del_fail": "Failed to close connection",
+        "key_quit": "Quit",
+        "key_toggle": "On / Off VPN",
+        "key_refresh": "Refresh",
+        "key_connections": "Connections",
+        "key_close_conn": "Close",
+        "key_lang": "Lang",
+        "lang_current_name": "English",
+        "admin_required": "Administrator rights are required (TUN mode).",
+        "admin_restart": "Restarting with admin rights...",
+        "admin_failed": "Could not obtain admin rights.",
+        "press_enter_exit": "Press Enter to exit...",
+        "exiting": "Exiting...",
+        "elev_no_mech": "No mechanism to elevate privileges",
+        "elev_error": "Elevation error: {error}",
+        "prof_not_found": "Config file not found.",
+        "prof_paste": "Paste your subscription profile URL.",
+        "prof_paste_hint": "To paste: right mouse button or Shift+Insert",
+        "prof_prompt": "Profile URL: ",
+        "prof_saved": "URL saved to URL.txt",
+        "val_empty": "No URL provided",
+        "val_bad": "Invalid URL",
+        "val_scheme": "URL must start with http:// or https://",
+        "gh_all_fail": "All download sources unavailable",
+        "gh_tag_fail": "Could not determine the latest release version",
+    }
+}
 
-def print_menu_item(number, text):
-    """Выводит пункт меню: цифра фиолетовая, текст жёлтый"""
-    print(f"{PURPLE} {number}.{RESET} {YELLOW}{text}{RESET}")
+_language = None
 
-def clear_screen():
-    if platform.system().lower() == "windows":
-        os.system('cls')
-    else:
-        # ANSI-коды вместо os.system('clear'): не запускаем sh,
-        # чтобы избежать конфликта упакованного libreadline с системным
-        sys.stdout.write("\033[2J\033[H")
-        sys.stdout.flush()
+def get_language():
+    global _language
+    if _language is None:
+        _language = "ru"
+        try:
+            if SETTINGS_FILE.exists():
+                with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
+                    _language = json.load(f).get("language", "ru")
+        except Exception:
+            _language = "ru"
+    return _language
+
+def set_language(lang):
+    global _language
+    _language = lang
+
+def t(key, **kwargs):
+    lang = get_language()
+    table = STRINGS.get(lang, STRINGS["ru"])
+    template = table.get(key) or STRINGS["ru"].get(key, key)
+    try:
+        return template.format(**kwargs)
+    except Exception:
+        return template
 
 def get_script_dir():
-    """Возвращает директорию, где лежит скрипт (или бинарник)"""
     if getattr(sys, "frozen", False):
         return Path(sys.executable).resolve().parent
     return Path(__file__).resolve().parent
 
 def get_os():
-    """Определяет операционную систему"""
     os_name = platform.system().lower()
-    if os_name == "windows":
-        return "windows"
-    elif os_name == "darwin":
-        return "darwin"
-    elif os_name == "linux":
-        return "linux"
+    if os_name == "windows": return "windows"
+    if os_name == "darwin": return "darwin"
     return "linux"
 
 def get_arch():
-    """Определяет архитектуру процессора"""
     machine = platform.machine().lower()
-    if machine in ("x86_64", "amd64"):
-        return "amd64"
-    if machine in ("x86", "i386", "i686"):
-        return "386" if get_os() == "windows" else "amd64"
-    if machine in ("aarch64", "arm64"):
-        return "arm64"
+    if machine in ("x86_64", "amd64"): return "amd64"
+    if machine in ("x86", "i386", "i686"): return "386"
+    if machine in ("aarch64", "arm64"): return "arm64"
     return "amd64"
 
 def check_avx2_support():
-    """Проверяет поддержку AVX2 на процессоре"""
+    arch = get_arch()
+    if arch != "amd64": return False
     try:
         if get_os() == "linux":
             with open("/proc/cpuinfo", "r") as f:
                 return "avx2" in f.read().lower()
         elif get_os() == "windows":
-            try:
-                result = subprocess.run(
-                    ["wmic", "cpu", "get", "name"],
-                    capture_output=True, text=True, timeout=5
-                )
-                cpu_name = result.stdout.lower()
-                old_cpus = ["pentium", "celeron", "atom"]
-                return not any(old in cpu_name for old in old_cpus)
-            except:
-                return True
+            result = subprocess.run(["wmic", "cpu", "get", "name"], capture_output=True, text=True, timeout=5)
+            cpu_name = result.stdout.lower()
+            return not any(old in cpu_name for old in ["pentium", "celeron", "atom"])
         elif get_os() == "darwin":
             return True
-    except:
+    except Exception:
         pass
     return False
 
 def is_admin():
-    """Проверяет, запущен ли скрипт с правами администратора"""
     try:
         if platform.system().lower() == "windows":
             import ctypes
             return ctypes.windll.shell32.IsUserAnAdmin() != 0
         else:
             return os.getuid() == 0
-    except:
+    except Exception:
         return False
 
 def restart_as_admin():
-    """Перезапускает скрипт с правами администратора"""
-    if is_admin():
-        return True
+    if is_admin(): return True
     try:
         if platform.system().lower() == "windows":
             import ctypes
             params = subprocess.list2cmdline(sys.argv[1:]) if len(sys.argv) > 1 else None
-            ctypes.windll.shell32.ShellExecuteW(
-                None, "runas", sys.executable, params, None, 1
-            )
+            ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, params, None, 1)
             sys.exit(0)
         elif platform.system().lower() == "darwin":
             args_str = " ".join(sys.argv)
-            script = (
-                'do shell script "'
-                + sys.executable + " " + args_str +
-                '" with administrator privileges'
-            )
-            subprocess.Popen(["osascript", "-e", script])
+            subprocess.Popen(["osascript", "-e", f'do shell script "{sys.executable} {args_str}" with administrator privileges'])
             sys.exit(0)
         else:
-            # Linux: sudo с явной передачей GUI-переменных
             if shutil.which("sudo"):
-                os.execvp("sudo", ["sudo", "-E", "env"] +
-                          [f"{k}={v}" for k, v in _gui_env_snapshot.items()] +
-                          sys.argv)
+                os.execvp("sudo", ["sudo", "-E"] + sys.argv)
             elif shutil.which("pkexec"):
                 os.execvp("pkexec", ["pkexec"] + sys.argv)
             else:
-                print_error(t("elev_no_mech"))
                 return False
-    except Exception as e:
-        print_error(t("elev_error", error=e))
+    except Exception:
         return False
     return True
 
-def setup_gui_environment():
-    """Настраивает переменные окружения для панели на Linux"""
-    if get_os() != "linux":
-        return
-    os.environ.setdefault("QT_API", "pyside6")
-    # Подавляем отладочный шум Qt
-    os.environ.setdefault("QT_LOGGING_RULES", "*.debug=false")
-
 def ensure_dirs():
-    """Создаёт необходимые директории"""
     ARCHIVES_DIR.mkdir(exist_ok=True)
-    ZASHBOARD_DIR.mkdir(exist_ok=True)
+
+def load_settings():
+    settings = dict(DEFAULT_SETTINGS)
+    try:
+        if SETTINGS_FILE.exists():
+            with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
+                settings.update(json.load(f))
+    except Exception:
+        pass
+    return settings
+
+def save_settings(settings):
+    with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
+        json.dump(settings, f, ensure_ascii=False, indent=2)
 
 def setup_console():
-    """Включает ANSI-цвета в консоли Windows (conhost)"""
-    if platform.system().lower() != "windows":
-        return
+    if platform.system().lower() != "windows": return
     try:
         import ctypes
         kernel32 = ctypes.windll.kernel32
-        handle = kernel32.GetStdHandle(-11)  # STDOUT
+        handle = kernel32.GetStdHandle(-11)
         mode = ctypes.c_ulong()
         if kernel32.GetConsoleMode(handle, ctypes.byref(mode)):
-            # 0x0004 = ENABLE_VIRTUAL_TERMINAL_PROCESSING
             kernel32.SetConsoleMode(handle, mode.value | 0x0004)
     except Exception:
         pass

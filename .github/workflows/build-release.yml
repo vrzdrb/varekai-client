@@ -43,14 +43,7 @@ jobs:
       - name: Install dependencies
         shell: bash
         run: |
-          pip install pyinstaller requests ruamel.yaml pywebview
-          pip install "PySide6==6.11.2" qtpy
-
-      - name: Install Qt system libraries (Linux)
-        if: matrix.platform == 'linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y qt6-base-dev qt6-webengine-dev qt6-webchannel-dev libxcb-cursor0 libpulse0
+          pip install pyinstaller requests ruamel.yaml textual httpx
 
       - name: Create mirrors list
         shell: bash
@@ -61,47 +54,11 @@ jobs:
           https://gh-proxy.org/
           EOF
 
-      - name: Create desktop launcher (Linux)
-        if: matrix.platform == 'linux'
-        shell: bash
-        run: |
-          cat > START.desktop << 'EOF'
-          [Desktop Entry]
-          Name=START
-          Comment=Скрипт для запуска prizrak-core + zashboard с автообновлением
-          Exec=bash -c 'for t in gnome-terminal konsole xfce4-terminal alacritty kitty wezterm xterm foot; do if command -v $t &>/dev/null; then exec $t -e ./START; fi; done'
-          Icon=terminal
-          Terminal=false
-          Type=Application
-          Categories=Network
-          GenericName=Мы идём дальше
-          EOF
-
-      - name: Create starter (macOS)
-        if: matrix.platform == 'macos'
-        shell: bash
-        run: |
-          printf '#!/bin/bash\ncd "$(dirname "$0")"\n./START\n' > START.command
-          chmod +x START.command
-
       - name: Build with PyInstaller
         shell: bash
         run: |
-          # Собираем под оригинальным именем папки
           pyinstaller --onedir --name varekai-client main.py
-          
-          # Переименовываем только бинарник на Windows
-          if [ "${{ matrix.platform }}" = "windows" ]; then
-            mv dist/varekai-client/varekai-client.exe dist/varekai-client/START.exe
-          fi
-          
-          cp -r zashboard-profile dist/varekai-client/
           cp mirrors.txt dist/varekai-client/
-          if [ "${{ matrix.platform }}" = "linux" ]; then
-            cp START.desktop dist/varekai-client/
-          elif [ "${{ matrix.platform }}" = "macos" ]; then
-            cp START.command dist/varekai-client/
-          fi
 
       - name: Package
         shell: bash
@@ -124,7 +81,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4

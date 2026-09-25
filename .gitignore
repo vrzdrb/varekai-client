@@ -19,23 +19,10 @@ geosite.dat
 
 # === Скачанное и генерируемое ===
 archives/
-zashboard/
 unified/
 temp_extract/
-zashboard_temp.zip
 START.desktop
 START.command
-
-# === Профиль панели: храним только настройки (единый формат QtWebEngine) ===
-zashboard-profile/*
-!zashboard-profile/Local Storage/
-!zashboard-profile/IndexedDB/
-!zashboard-profile/blob_storage/
-!zashboard-profile/WebStorage/
-!zashboard-profile/*.jpg
-!zashboard-profile/*.jpeg
-!zashboard-profile/*.png
-!zashboard-profile/*.webp
 
 # === Python / сборка ===
 __pycache__/
@@ -43,7 +30,9 @@ __pycache__/
 *.spec
 build/
 dist/
+.venv/
 
 # === Мусор ОС ===
 .DS_Store
 Thumbs.db
+*~

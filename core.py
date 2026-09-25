@@ -1,3 +1,6 @@
+"""
+Бизнес-логика: управление ядром, обновление, профиль
+"""
 import os
 import sys
 import shutil
@@ -6,18 +9,17 @@ import time
 import zipfile
 import gzip
 import urllib.parse
+import re
 import requests
 from pathlib import Path
-from utils import (print_success, print_error, print_info, get_os, is_admin,
-                   get_arch, check_avx2_support, ensure_dirs, get_script_dir)
-from constants import (CORE_BINARY, CORE_LOG, ZASHBOARD_DIR, ARCHIVES_DIR,
-                       CONFIG_CLEAN, CONFIG_SMART, URL_FILE, MAX_ARCHIVES,
-                       CORE_REPO, ZASHBOARD_REPO, YELLOW, RESET)
+
+from utils import (
+    get_os, get_arch, check_avx2_support, ensure_dirs, get_script_dir,
+    is_admin, t, URL_FILE, CORE_BINARY, CORE_LOG, ARCHIVES_DIR,
+    CONFIG_CLEAN, CONFIG_SMART, MAX_ARCHIVES, CORE_REPO,
+    DEFAULT_MIRRORS, MIRRORS_FILE
+)
 from config import generate_smart_config
-from github import (get_latest_release_info, github_download_url,
-                    download_with_fallback, build_core_asset_name,
-                    find_asset_for_platform)
-from i18n import t
 
 core_process = None
 
@@ -43,8 +45,9 @@ def get_core_pid():
             )
             pids = result.stdout.split()
             return pids[0] if pids else None
-    except:
+    except Exception:
         return None
+
 
 def get_latest_archived_version():
     """Возвращает тег версии последнего архива ядра для текущей платформы"""
@@ -59,15 +62,13 @@ def get_latest_archived_version():
             tag = tag[:-len(ext)]
     return tag
 
+
 def get_current_core_info():
     """Возвращает информацию о текущем ядре (ОС, архитектура, версия)"""
     os_name = get_os()
     arch = get_arch()
     avx2 = check_avx2_support()
-    if os_name == "windows" and arch == "amd64":
-        variant = "compatible" if not avx2 else "v3"
-    else:
-        variant = "v3"
+    variant = "v3" if (arch == "amd64" and avx2) else ("compatible" if arch == "amd64" else arch)
     version = get_latest_archived_version() or t("not_installed")
     return f"prizrak-core | {os_name}-{arch} | {variant} | {version}"
 
@@ -76,35 +77,28 @@ def get_current_core_info():
 def save_archive(archive_path, version_tag):
     """Сохраняет архив в папку архивов"""
     ensure_dirs()
-    ext = archive_path.suffix
-    archive_name = f"prizrak-core-{get_os()}-{get_arch()}-{version_tag}{ext}"
-    dest_path = ARCHIVES_DIR / archive_name
+    dest_path = ARCHIVES_DIR / f"prizrak-core-{get_os()}-{get_arch()}-{version_tag}{archive_path.suffix}"
     if not dest_path.exists():
         shutil.copy2(archive_path, dest_path)
     cleanup_old_archives()
 
+
 def cleanup_old_archives():
     """Удаляет старые архивы, оставляя только MAX_ARCHIVES последних"""
-    archives = sorted(
-        ARCHIVES_DIR.glob("prizrak-core-*"),
-        key=lambda x: x.stat().st_mtime,
-        reverse=True
-    )
+    archives = sorted(ARCHIVES_DIR.glob("prizrak-core-*"), key=lambda x: x.stat().st_mtime, reverse=True)
     for old_archive in archives[MAX_ARCHIVES:]:
         try:
             old_archive.unlink()
-        except:
+        except Exception:
             pass
+
 
 def get_available_archives():
     """Возвращает список доступных архивов для отката"""
     if not ARCHIVES_DIR.exists():
         return []
-    return sorted(
-        ARCHIVES_DIR.glob("prizrak-core-*"),
-        key=lambda x: x.stat().st_mtime,
-        reverse=True
-    )
+    return sorted(ARCHIVES_DIR.glob("prizrak-core-*"), key=lambda x: x.stat().st_mtime, reverse=True)
+
 
 def find_archived_archive(version_tag):
     """Ищет архив ядра с указанным тегом версии"""
@@ -114,6 +108,7 @@ def find_archived_archive(version_tag):
             return a
     return None
 
+
 def extract_archive(archive_path, extract_to):
     """Распаковывает архив"""
     try:
@@ -122,13 +117,13 @@ def extract_archive(archive_path, extract_to):
                 zip_ref.extractall(extract_to)
         elif str(archive_path).endswith(".gz"):
             with gzip.open(archive_path, "rb") as f_in:
-                binary_name = Path(archive_path).stem
-                binary_path = Path(extract_to) / binary_name
+                binary_path = Path(extract_to) / Path(archive_path).stem
                 with open(binary_path, "wb") as f_out:
                     shutil.copyfileobj(f_in, f_out)
         return True, None
     except Exception as e:
         return False, str(e)
+
 
 def rollback_to_version(archive_path):
     """Откатывает ядро на выбранную версию из архива"""
@@ -136,100 +131,152 @@ def rollback_to_version(archive_path):
         current_binary = Path(CORE_BINARY)
         if current_binary.exists():
             current_binary.unlink()
-
         temp_dir = Path("temp_extract")
         temp_dir.mkdir(exist_ok=True)
-
-        success, error = extract_archive(archive_path, temp_dir)
+        success, _ = extract_archive(archive_path, temp_dir)
         if not success:
-            print_error(t("rb_extract_fail", error=error))
             return False
-
         binary_found = False
         for f in temp_dir.rglob("*"):
             if f.is_file() and not f.name.endswith(('.zip', '.gz')):
                 shutil.copy2(f, CORE_BINARY)
                 binary_found = True
                 break
-
         shutil.rmtree(temp_dir, ignore_errors=True)
-
-        if binary_found:
-            if get_os() != "windows":
-                os.chmod(CORE_BINARY, 0o755)
-            print_success(t("rb_done", name=archive_path.name))
-            return True
-        else:
-            print_error(t("binary_not_in_archive"))
-            return False
-    except Exception as e:
-        print_error(t("rb_error", error=e))
+        if binary_found and get_os() != "windows":
+            os.chmod(CORE_BINARY, 0o755)
+        return binary_found
+    except Exception:
         return False
+
+
+# === GITHUB И ЗЕРКАЛА ===
+def ensure_mirrors_file():
+    """Создаёт mirrors.txt с дефолтами, если файла нет"""
+    if not MIRRORS_FILE.exists():
+        MIRRORS_FILE.write_text("\n".join(DEFAULT_MIRRORS) + "\n", encoding="utf-8")
+
+
+def load_mirrors():
+    """Читает список зеркал"""
+    ensure_mirrors_file()
+    mirrors = []
+    for line in MIRRORS_FILE.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line and not line.startswith("#"):
+            mirrors.append(line if line.endswith("/") else line + "/")
+    return mirrors
+
+
+def download_with_fallback(url, dest_path):
+    """Скачивает файл: сначала напрямую, затем через зеркала"""
+    for prefix in [""] + load_mirrors():
+        try:
+            response = requests.get(prefix + url, stream=True, timeout=5 if prefix == "" else 30)
+            if response.status_code == 200:
+                with open(dest_path, "wb") as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        f.write(chunk)
+                return True, None
+        except requests.exceptions.RequestException:
+            continue
+    return False, t("gh_all_fail")
+
+
+def get_latest_tag_via_redirect(repo):
+    """Получает тег последнего релиза через редирект"""
+    url = f"https://github.com/{repo}/releases/latest"
+    for prefix in [""] + load_mirrors():
+        try:
+            r = requests.head(prefix + url, allow_redirects=True, timeout=5 if prefix == "" else 10)
+            if r.status_code == 200 and "/tag/" in r.url:
+                return r.url.rstrip("/").split("/tag/")[-1], None
+        except requests.exceptions.RequestException:
+            continue
+    return None, t("gh_tag_fail")
+
+
+def get_latest_release_info(repo):
+    """Возвращает (tag, assets, error)"""
+    try:
+        r = requests.get(
+            f"https://api.github.com/repos/{repo}/releases/latest",
+            timeout=5,
+            headers={"User-Agent": "Varekai-Client"}
+        )
+        if r.status_code == 200:
+            data = r.json()
+            return data.get("tag_name"), data.get("assets", []), None
+    except requests.exceptions.RequestException:
+        pass
+    return get_latest_tag_via_redirect(repo)
+
+
+def github_download_url(repo, tag, asset_name):
+    """Прямая ссылка на ассет релиза"""
+    return f"https://github.com/{repo}/releases/download/{tag}/{asset_name}"
+
+
+def build_core_asset_name(tag):
+    """Детерминированно собирает имя ассета prizrak-core"""
+    os_name, arch = get_os(), get_arch()
+    micro = "-v3" if (arch == "amd64" and check_avx2_support()) else ("-v1" if arch == "amd64" else "")
+    return f"prizrak-core-{os_name}-{arch}{micro}-{tag}{'.zip' if os_name == 'windows' else '.gz'}"
+
+
+def find_asset_for_platform(assets):
+    """Ищет подходящий бинарник для текущей платформы"""
+    os_name, arch = get_os(), get_arch()
+    avx2_supported = check_avx2_support()
+    target_microarch = "v3" if (arch == "amd64" and avx2_supported) else ("v1" if arch == "amd64" else None)
+    candidates = []
+    for asset in assets:
+        name = asset["name"].lower()
+        if os_name not in name or arch not in name:
+            continue
+        if any(name.endswith(ext) for ext in ('.deb', '.rpm', '.pkg.tar.zst')):
+            continue
+        if (os_name == "windows" and not name.endswith(".zip")) or (os_name != "windows" and not name.endswith(".gz")):
+            continue
+        if "compatible" in name:
+            continue
+        if arch == "amd64" and target_microarch:
+            if target_microarch == "v3" and "-v3-" not in name:
+                continue
+            if target_microarch == "v1" and ("-v2-" in name or "-v3-" in name):
+                continue
+        if re.search(r'-go\d+-', name):
+            continue
+        candidates.append(asset)
+    return candidates[0] if candidates else None
 
 
 # === ОБНОВЛЕНИЕ ЯДРА ===
 def update_core():
-    """Обновляет ядро prizrak-core до последней версии (с фоллбэком через зеркала).
-    Политика: если обновление не удалось, но локальный бинарник есть — продолжаем
-    с предупреждением; если бинарника нет — ошибка и возврат False."""
-    print_info(t("core_checking"))
-
+    """Обновляет ядро prizrak-core до последней версии"""
     tag, assets, err = get_latest_release_info(CORE_REPO)
     if err:
-        print_error(t("core_release_fail", error=err))
-        if Path(CORE_BINARY).exists():
-            print_info(t("core_local"))
-            return True
-        return False
-
-    # Сравниваем с последней сохранённой версией в archives/
+        return Path(CORE_BINARY).exists()
     local_tag = get_latest_archived_version()
-    if local_tag == tag:
-        if Path(CORE_BINARY).exists():
-            print_info(t("core_uptodate", tag=tag))
-            return True
-        archived = find_archived_archive(tag)
-        if archived:
-            print_info(t("core_restore"))
-            return rollback_to_version(archived)
-
-    # Ищем ассет для нашей платформы
-    asset = None
-    if assets:
-        asset = find_asset_for_platform(assets)
-
-    # Если ассет не найден через API, собираем имя детерминированно
+    if local_tag == tag and Path(CORE_BINARY).exists():
+        return True
+    archived = find_archived_archive(tag) if local_tag == tag else None
+    if archived:
+        return rollback_to_version(archived)
+    asset = find_asset_for_platform(assets) if assets else None
     if not asset:
-        asset_name = build_core_asset_name(tag)
-        asset = {"name": asset_name}
-        print_info(t("core_build_name", name=asset_name))
-
+        asset = {"name": build_core_asset_name(tag)}
     archive_path = Path(asset["name"])
-    download_url = github_download_url(CORE_REPO, tag, asset["name"])
-    print_info(t("downloading", name=asset["name"]))
-
-    success, err = download_with_fallback(download_url, archive_path)
+    success, _ = download_with_fallback(github_download_url(CORE_REPO, tag, asset["name"]), archive_path)
     if not success:
-        print_error(t("core_download_fail", error=err))
-        if Path(CORE_BINARY).exists():
-            print_info(t("core_local"))
-            return True
-        return False
-
+        return Path(CORE_BINARY).exists()
     save_archive(archive_path, tag)
-
     temp_dir = Path("temp_extract")
     temp_dir.mkdir(exist_ok=True)
-
-    success, error = extract_archive(archive_path, temp_dir)
+    success, _ = extract_archive(archive_path, temp_dir)
     if not success:
-        print_error(t("extract_fail", error=error))
         archive_path.unlink(missing_ok=True)
-        if Path(CORE_BINARY).exists():
-            print_info(t("core_local"))
-            return True
-        return False
-
+        return Path(CORE_BINARY).exists()
     binary_found = False
     for f in temp_dir.rglob("*"):
         if f.is_file() and not f.name.endswith(('.zip', '.gz')):
@@ -239,142 +286,25 @@ def update_core():
             shutil.copy2(f, CORE_BINARY)
             binary_found = True
             break
-
     shutil.rmtree(temp_dir, ignore_errors=True)
     archive_path.unlink(missing_ok=True)
-
-    if binary_found:
-        if get_os() != "windows":
-            os.chmod(CORE_BINARY, 0o755)
-        print_success(t("core_updated", tag=tag))
-        return True
-    else:
-        print_error(t("binary_not_in_archive"))
-        if Path(CORE_BINARY).exists():
-            print_info(t("core_local"))
-            return True
-        return False
-
-
-# === ZASHBOARD ===
-def get_zashboard_version():
-    """Получает текущую версию zashboard из локального файла"""
-    version_file = ZASHBOARD_DIR / "version.txt"
-    if version_file.exists():
-        return version_file.read_text(encoding="utf-8").strip()
-    return None
-
-def is_zashboard_valid():
-    """Проверяет, что панель корректно распакована (index.html в корне папки)"""
-    return (ZASHBOARD_DIR / "index.html").exists()
-
-def update_zashboard():
-    """Обновляет zashboard до последней версии (с фоллбэком через зеркала).
-    Политика: если обновление не удалось, но папка валидна — продолжаем
-    с предупреждением; если папки нет — ошибка."""
-    print_info(t("zb_checking"))
-
-    tag, assets, err = get_latest_release_info(ZASHBOARD_REPO)
-    if err:
-        print_error(t("core_release_fail", error=err))
-        if is_zashboard_valid():
-            print_info(t("zb_local"))
-            return True
-        return False
-
-    latest_version = tag or "unknown"
-    current_version = get_zashboard_version()
-
-    if current_version == latest_version and is_zashboard_valid():
-        print_info(t("zb_uptodate", version=current_version))
-        return True
-
-    asset = None
-    for a in assets:
-        if "dist" in a["name"].lower() and a["name"].endswith(".zip"):
-            asset = a
-            break
-
-    # Если API недоступен, имя ассета zashboard всегда предсказуемо
-    if not asset:
-        if tag:
-            asset = {"name": "dist.zip"}
-        else:
-            print_error(t("zb_no_archive"))
-            if is_zashboard_valid():
-                print_info(t("zb_local"))
-                return True
-            return False
-
-    archive_path = Path("zashboard_temp.zip")
-    download_url = github_download_url(ZASHBOARD_REPO, latest_version, asset["name"])
-    print_info(t("downloading", name=f"zashboard {latest_version}"))
-
-    success, err = download_with_fallback(download_url, archive_path)
-    if not success:
-        print_error(t("zb_download_fail", error=err))
-        if is_zashboard_valid():
-            print_info(t("zb_local"))
-            return True
-        return False
-
-    try:
-        if ZASHBOARD_DIR.exists():
-            shutil.rmtree(ZASHBOARD_DIR)
-        ZASHBOARD_DIR.mkdir(parents=True, exist_ok=True)
-
-        with zipfile.ZipFile(archive_path, "r") as zip_ref:
-            zip_ref.extractall(ZASHBOARD_DIR)
-
-        # Файлы панели лежат внутри подпапки dist/, а ядро ожидает
-        # их напрямую в корне папки external-ui. Перемещаем содержимое.
-        dist_dir = ZASHBOARD_DIR / "dist"
-        if dist_dir.exists() and dist_dir.is_dir():
-            for item in list(dist_dir.iterdir()):
-                dest = ZASHBOARD_DIR / item.name
-                if dest.exists():
-                    if dest.is_dir():
-                        shutil.rmtree(dest)
-                    else:
-                        dest.unlink()
-                shutil.move(str(item), str(dest))
-            dist_dir.rmdir()
-
-        (ZASHBOARD_DIR / "version.txt").write_text(latest_version, encoding="utf-8")
-        archive_path.unlink(missing_ok=True)
-        print_success(t("zb_updated", version=latest_version))
-        return True
-    except Exception as e:
-        print_error(t("zb_extract_fail", error=e))
-        archive_path.unlink(missing_ok=True)
-        if is_zashboard_valid():
-            print_info(t("zb_local"))
-            return True
-        return False
+    if binary_found and get_os() != "windows":
+        os.chmod(CORE_BINARY, 0o755)
+    return binary_found or Path(CORE_BINARY).exists()
 
 
 # === ПРОФИЛЬ ПОДПИСКИ ===
 def load_profile_url():
-    """Загружает ссылку на профиль из URL.txt или запрашивает у пользователя"""
+    """Загружает ссылку на профиль из URL.txt"""
     if URL_FILE.exists():
         url = URL_FILE.read_text(encoding="utf-8").strip()
         if url:
             return url
+    return ""
 
-    print_info(t("prof_not_found"))
-    print_info(t("prof_paste"))
-    print_info(t("prof_paste_hint"))
-    url = input(f"{YELLOW}{t('prof_prompt')}{RESET}").strip()
-
-    if url:
-        URL_FILE.write_text(url, encoding="utf-8")
-        print_success(t("prof_saved"))
-        return url
-    else:
-        return ""
 
 def validate_url(url):
-    """Проверяет валидность URL. Возвращает (валидность, текст ошибки)"""
+    """Проверяет валидность URL"""
     if not url or not url.strip():
         return False, t("val_empty")
     parsed = urllib.parse.urlparse(url)
@@ -384,204 +314,95 @@ def validate_url(url):
         return False, t("val_scheme")
     return True, None
 
+
 def update_profile():
-    """Скачивает и обновляет пользовательский профиль,
-    затем перегенерирует smart-config.yaml"""
+    """Скачивает и обновляет пользовательский профиль"""
     profile_url = load_profile_url()
     if not profile_url:
-        print_error(t("prof_url_missing"))
         return False
-
-    valid, error = validate_url(profile_url)
+    valid, _ = validate_url(profile_url)
     if not valid:
-        print_error(error)
         return False
-
-    print_info(t("prof_downloading"))
     try:
         response = requests.get(profile_url, timeout=15)
-        if response.status_code == 401 or response.status_code == 403:
-            print_error(t("prof_auth"))
-            return False
-        if response.status_code != 200:
-            print_error(t("prof_unavailable"))
-            return False
-
-        CONFIG_CLEAN.write_text(response.text, encoding="utf-8")
-        print_success(t("prof_ok"))
-        generate_smart_config()
-        return True
-    except requests.exceptions.ConnectionError:
-        print_error(t("prof_noconn"))
-        return False
-    except Exception as e:
-        print_error(t("prof_error", error=e))
-        return False
+        if response.status_code == 200:
+            CONFIG_CLEAN.write_text(response.text, encoding="utf-8")
+            generate_smart_config()
+            return True
+    except Exception:
+        pass
+    return False
 
 
 # === УПРАВЛЕНИЕ ЯДРОМ ===
-def start_core():
-    """Запускает ядро prizrak-core в фоне с конфигом smart-config.yaml.
-    Если smart-config.yaml нет, но есть config.yaml — генерирует на лету."""
+def start_vpn():
+    """Запускает ядро prizrak-core в фоне"""
     global core_process
-
-    # Если ядро уже работает - не запускаем второй экземпляр
-    pid = get_core_pid()
-    if pid:
-        print_info(t("start_already", pid=pid))
+    if get_core_pid():
         return True
-
     if not Path(CORE_BINARY).exists():
-        print_error(t("start_no_binary"))
         return False
-
-    # Если smart-config.yaml нет, но есть config.yaml — генерируем
     if not CONFIG_SMART.exists():
-        if CONFIG_CLEAN.exists():
-            print_info(t("start_gen_smart"))
-            if not generate_smart_config():
-                return False
-        else:
-            print_error(t("start_no_config"))
+        if not CONFIG_CLEAN.exists() or not generate_smart_config():
             return False
-
     try:
         script_dir = get_script_dir()
         binary_path = script_dir / CORE_BINARY
         config_path = script_dir / CONFIG_SMART
-        ui_path = script_dir / "zashboard"
         log_path = script_dir / CORE_LOG
-
-        base_cmd = [str(binary_path), "-f", str(config_path), "-ext-ui", str(ui_path)]
-
-        # Если мы не root, нужно повысить права
+        # Очищаем VPN.log при каждом запуске
+        if log_path.exists():
+            log_path.unlink()
+        log_path.touch()
+        base_cmd = [str(binary_path), "-f", str(config_path)]
         if not is_admin():
-            if get_os() == "linux":
-                if shutil.which("pkexec"):
-                    print_info(t("start_pkexec"))
-                    cmd = ["pkexec", "env", f"SAFE_PATHS={ui_path}"] + base_cmd
-                    with open(log_path, "wb") as core_log:
-                        core_process = subprocess.Popen(
-                            cmd,
-                            stdout=core_log,
-                            stderr=core_log,
-                            cwd=str(script_dir)
-                        )
-                elif shutil.which("sudo"):
-                    print_error(t("start_sudo_noprompt"))
-                    print_info(t("start_options"))
-                    print_info(t("start_opt1"))
-                    print_info(t("start_opt2"))
-                    return False
-                else:
-                    print_error(t("start_no_root_mech"))
-                    print_info(t("start_install_polkit"))
-                    return False
-            elif get_os() == "windows":
-                print_error(t("start_win_admin"))
-                print_info(t("start_win_hint"))
-                return False
-            else:  # macOS
-                print_error(t("start_mac_admin"))
-                print_info(t("start_mac_hint"))
+            if get_os() == "linux" and shutil.which("pkexec"):
+                cmd = ["pkexec"] + base_cmd
+                with open(log_path, "wb") as core_log:
+                    core_process = subprocess.Popen(cmd, stdout=core_log, stderr=core_log, cwd=str(script_dir))
+            else:
                 return False
         else:
-            # Мы уже root/admin
-            env = os.environ.copy()
-            env["SAFE_PATHS"] = str(ui_path)
             cmd = base_cmd
-
             with open(log_path, "wb") as core_log:
                 if get_os() == "windows":
                     core_process = subprocess.Popen(
-                        cmd,
-                        stdout=core_log,
-                        stderr=core_log,
-                        env=env,
-                        cwd=str(script_dir),
-                        creationflags=(
-                            subprocess.CREATE_NO_WINDOW
-                            | subprocess.DETACHED_PROCESS
-                            | subprocess.CREATE_NEW_PROCESS_GROUP
-                        )
+                        cmd, stdout=core_log, stderr=core_log, cwd=str(script_dir),
+                        creationflags=subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
                     )
                 else:
                     core_process = subprocess.Popen(
-                        cmd,
-                        stdout=core_log,
-                        stderr=core_log,
-                        env=env,
-                        cwd=str(script_dir),
-                        start_new_session=True
+                        cmd, stdout=core_log, stderr=core_log, cwd=str(script_dir), start_new_session=True
                     )
-
-        # Ждём появления ядра в процессах: при запуске через pkexec ко времени
-        # старта добавляется ввод пароля в графическом окне, поэтому
-        # фиксированная пауза давала ложное "ядро не запустилось"
         pid = None
         deadline = time.time() + 30
         while time.time() < deadline:
             pid = get_core_pid()
             if pid:
                 break
-            # Обёртка (pkexec) умерла до старта ядра — отмена авторизации
-            # или ошибка: дальше ждать бессмысленно
             if core_process is not None and core_process.poll() is not None:
                 break
             time.sleep(0.5)
-
-        if pid is None:
-            error_output = log_path.read_text(errors="replace").strip()
-            tail = error_output.splitlines()[-5:]
-            print_error(t("start_failed_log"))
-            for line in tail:
-                print_error(f"  {line}")
-            return False
-
-        print_success(t("started", pid=pid))
-        return True
-
-    except PermissionError:
-        print_error(t("start_no_perm"))
-        if get_os() != "windows":
-            print_info(t("start_chmod", binary=CORE_BINARY))
-        return False
-    except Exception as e:
-        print_error(t("start_error", error=e))
+        return pid is not None
+    except Exception:
         return False
 
-def stop_core():
-    """Останавливает процесс ядра (с запросом прав, если ядро работает от root)"""
+
+def stop_vpn():
+    """Останавливает процесс ядра"""
     global core_process
-
     if get_core_pid() is None and core_process is None:
-        print_info(t("stop_not_running"))
         return
-
     if get_os() == "windows":
-        # На Windows скрипт работает от администратора (UAC), taskkill напрямую
         subprocess.run(["taskkill", "/F", "/IM", CORE_BINARY], capture_output=True)
     else:
         pkill_path = shutil.which("pkill") or "/usr/bin/pkill"
         if is_admin():
             subprocess.run([pkill_path, "-x", CORE_BINARY], capture_output=True)
         else:
-            # Ядро запущено от root - для остановки нужны права
-            print_info(t("stop_pkexec"))
             if shutil.which("pkexec"):
                 subprocess.run(["pkexec", pkill_path, "-x", CORE_BINARY], capture_output=True)
             elif shutil.which("sudo"):
-                # sudo спросит пароль прямо в терминале
                 subprocess.run(["sudo", pkill_path, "-x", CORE_BINARY])
-            else:
-                print_error(t("stop_no_mech"))
-                return
-
     core_process = None
-
-    # Проверяем реальный результат, а не верим себе на слово
     time.sleep(0.5)
-    if get_core_pid() is None:
-        print_info(t("stopped"))
-    else:
-        print_error(t("stop_failed"))
