@@ -16,11 +16,11 @@ from textual.containers import Horizontal, VerticalScroll, Container
 from textual.reactive import reactive
 from pathlib import Path
 from utils import (
-    t, CORE_LOG, load_settings, save_settings, set_language, get_language
+    t, CORE_LOG, CORE_BINARY, load_settings, save_settings, set_language, get_language
 )
 from core import (
     get_core_pid, get_current_core_info, start_vpn, stop_vpn,
-    update_core, update_profile
+    update_core, update_profile, get_latest_archived_version
 )
 from config import get_api_secret, get_proxy_groups_order
 
@@ -104,6 +104,18 @@ class ClashAPI:
             async with httpx.AsyncClient(timeout=2.0) as client:
                 r = await client.delete(
                     f"{self.base_url}/connections/{conn_id}",
+                    headers=self.headers,
+                )
+                return r.status_code in (200, 204)
+        except Exception:
+            return False
+
+    async def update_rule_providers(self):
+        """Обновляет все rule-providers через API ядра."""
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                r = await client.put(
+                    f"{self.base_url}/providers/rules",
                     headers=self.headers,
                 )
                 return r.status_code in (200, 204)
@@ -385,12 +397,15 @@ class ConnectionsScreen(ModalScreen):
             raw = row._raw
             if col in raw:
                 rows_data.append((cid, raw[col], row))
+
         def sort_key(item):
             val = item[1]
             if isinstance(val, (int, float)):
                 return val
             return str(val)
+
         rows_data.sort(key=lambda x: sort_key(x), reverse=reverse)
+
         scroll = self._scroll
         await scroll.remove_children()
         for cid, _, row in rows_data:
@@ -476,6 +491,7 @@ class ConnectionsScreen(ModalScreen):
                 self._prev.pop(cid, None)
         if self._empty is not None:
             self._empty.display = (len(self._rows) == 0)
+
 
 class VarekaiApp(App):
     TITLE = "varekai"
@@ -649,15 +665,18 @@ class VarekaiApp(App):
     vpn_running = reactive(False)
 
     def _lang_label(self) -> str:
-        return f"🌐 {t('lang_current_name')}"
+        return f" {t('lang_current_name')}"
+
+    def _conn_label(self) -> str:
+        return f"🌐 {t('key_connections')}"
 
     def _footer_text(self) -> str:
         return (
             f"[bold][bold #F0C60A]q[/] {t('key_quit')}    "
             f"[bold #F0C60A]s[/] {t('key_toggle')}    "
             f"[bold #F0C60A]r[/] {t('key_refresh')}    "
-            f"[bold #F0C60A]c[/] {t('key_connections')}    "
-            f"[bold #F0C60A]l[/] {t('key_lang')}[/]"
+            f"[bold #F0C60A]l[/] {t('key_lang')}    "
+            f"[bold #F0C60A]c[/] {t('key_connections')}[/]"
         )
 
     def compose(self) -> ComposeResult:
@@ -673,16 +692,17 @@ class VarekaiApp(App):
                 with Horizontal(classes="lang-row"):
                     yield Button(t("btn_logs"), id="btn_logs", classes="btn-lang")
                     yield Static("", classes="btn-sep")
-                    yield Button(self._lang_label(), id="btn_lang", classes="btn-lang")
+                    yield Button(self._conn_label(), id="btn_conn", classes="btn-lang")
                 yield Static(t("log_app"), id="log_title")
                 with Container(id="log_frame"):
-                    yield RichLog(id="brief_log", max_lines=1000, wrap=True)
+                    yield RichLog(id="brief_log", max_lines=1000, wrap=True, markup=True)
             with Container(classes="panel right-panel"):
                 yield Label(t("label_group"), id="label_group")
                 yield Select(
                     [(NO_CONN, t("no_connection"))],
                     id="group_select",
-                    allow_blank=False,
+                    allow_blank=True,
+                    prompt=t("no_connection"),
                 )
                 with Horizontal(classes="node-header"):
                     yield Static(t("col_node"), classes="node-name")
@@ -746,7 +766,9 @@ class VarekaiApp(App):
         self._app_buf.append(message)
         if self.log_source == "app":
             try:
-                self.query_one("#brief_log", RichLog).write(message)
+                from rich.text import Text
+                text = Text.from_markup(message)
+                self.query_one("#brief_log", RichLog).write(text)
             except Exception:
                 pass
 
@@ -796,25 +818,119 @@ class VarekaiApp(App):
             self.action_toggle_language()
         elif btn_id == "btn_logs":
             self.action_toggle_logs()
+        elif btn_id == "btn_conn":
+            self.action_show_connections()
 
     def _worker_toggle(self):
         if self.vpn_running:
             self.call_from_thread(self.brief_log, t("brief_stopping"))
             stop_vpn()
+            time.sleep(0.5)
+            if get_core_pid() is None:
+                self.call_from_thread(self.brief_log, f"[bold #34C421]{t('vpn_stop_ok')}[/]")
+            else:
+                self.call_from_thread(self.brief_log, f"[bold #F50A0A]{t('vpn_stop_fail')}[/]")
         else:
+            if not Path(CORE_BINARY).exists():
+                self.call_from_thread(self.brief_log, f"[bold #F50A0A]{t('core_not_found')}[/]")
+                return
             self.call_from_thread(self.brief_log, t("brief_starting"))
-            start_vpn()
+            ok = start_vpn()
+            if ok:
+                self.call_from_thread(self.brief_log, f"[bold #34C421]{t('vpn_start_ok')}[/]")
+            else:
+                self.call_from_thread(self.brief_log, f"[bold #F50A0A]{t('vpn_start_fail')}[/]")
         self.call_from_thread(self.update_status)
 
     def _worker_update_and_run(self):
         self.call_from_thread(self.brief_log, t("brief_checking"))
-        update_core()
+        core_status = update_core()
+        if core_status == 0:
+            self.call_from_thread(self.brief_log, f"[bold #34C421]{t('core_already_latest')}[/]")
+        elif core_status == 1:
+            version = get_latest_archived_version() or "unknown"
+            self.call_from_thread(self.brief_log, f"[bold #34C421]{t('core_updated', version=version)}[/]")
+        else:
+            self.call_from_thread(self.brief_log, f"[bold #F50A0A]{t('core_update_fail')}[/]")
+
         self.call_from_thread(self.brief_log, t("brief_updating_profile"))
-        update_profile()
+        profile_status = update_profile()
+        if profile_status == 1:
+            self.call_from_thread(self.brief_log, f"[bold #34C421]{t('profile_updated')}[/]")
+        else:
+            self.call_from_thread(self.brief_log, f"[bold #F50A0A]{t('profile_update_fail')}[/]")
+
         self.call_from_thread(self._reload_groups_order)
         self.call_from_thread(self.brief_log, t("brief_starting"))
-        start_vpn()
+        ok = start_vpn()
+        if ok:
+            self.call_from_thread(self.brief_log, f"[bold #34C421]{t('vpn_start_ok')}[/]")
+        else:
+            self.call_from_thread(self.brief_log, f"[bold #F50A0A]{t('vpn_start_fail')}[/]")
         self.call_from_thread(self.update_status)
+        # Обновление провайдеров правил ПОСЛЕ запуска VPN
+        if ok:
+            self.call_from_thread(self.brief_log, t("brief_updating_rules"))
+            ok_rules = self._update_rule_providers_sync()
+            if ok_rules:
+                self.call_from_thread(self.brief_log, f"[bold #34C421]{t('rule_providers_ok')}[/]")
+            else:
+                self.call_from_thread(self.brief_log, f"[bold #F50A0A]{t('rule_providers_fail')}[/]")
+
+    def _update_rule_providers_sync(self) -> bool:
+        """Обновляет все rule-providers через API ядра (механизм clash-verge-rev):
+        1. Ждём готовности API через GET /providers/rules.
+        2. Берём имена и типы провайдеров из ответа ядра.
+        3. Для каждого (кроме inline): PUT /providers/rules/{имя}.
+        Возвращает True, если все провайдеры обновились успешно."""
+        import requests as req
+        import urllib.parse
+        secret = get_api_secret()
+        headers = {"Authorization": f"Bearer {secret}"} if secret else {}
+        base = "http://127.0.0.1:9090"
+        providers = None
+        for _ in range(15):
+            try:
+                r = req.get(f"{base}/providers/rules", headers=headers, timeout=3)
+                if r.status_code == 200:
+                    providers = r.json().get("providers", {})
+                    break
+            except Exception:
+                pass
+            time.sleep(1)
+        if providers is None:
+            return False
+        targets = [
+            name for name, data in providers.items()
+            if isinstance(data, dict)
+            and str(data.get("type", "")).lower() in ("http", "file")
+        ]
+        if not targets:
+            return True
+        all_ok = True
+        for name in targets:
+            encoded = urllib.parse.quote(name, safe="")
+            try:
+                r = req.put(
+                    f"{base}/providers/rules/{encoded}",
+                    headers=headers,
+                    timeout=30,
+                )
+                ok = r.status_code in (200, 204)
+            except Exception:
+                ok = False
+            if ok:
+                self.call_from_thread(
+                    self.brief_log,
+                    f"[bold #34C421]{t('rule_provider_ok', name=name)}[/]"
+                )
+            else:
+                self.call_from_thread(
+                    self.brief_log,
+                    f"[bold #F50A0A]{t('rule_provider_fail', name=name)}[/]"
+                )
+                all_ok = False
+        return all_ok
 
     def _reload_groups_order(self):
         self._groups_order = get_proxy_groups_order()
@@ -834,7 +950,7 @@ class VarekaiApp(App):
         self.query_one("#btn_update_run", Button).label = t("btn_update_run")
         btn_toggle = self.query_one("#btn_toggle", Button)
         btn_toggle.label = t("btn_toggle_off") if self.vpn_running else t("btn_toggle_on")
-        self.query_one("#btn_lang", Button).label = self._lang_label()
+        self.query_one("#btn_conn", Button).label = self._conn_label()
         self.query_one("#btn_logs", Button).label = t("btn_logs")
         self.query_one("#label_group", Label).update(t("label_group"))
         title = t("log_core") if self.log_source == "core" else t("log_app")
@@ -842,8 +958,8 @@ class VarekaiApp(App):
         self.query_one("#footer_bar", Static).update(self._footer_text())
         try:
             sel = self.query_one("#group_select", Select)
-            if sel.value == NO_CONN:
-                sel.set_options([(NO_CONN, t("no_connection"))])
+            sel.set_options([(NO_CONN, t("no_connection"))])
+            sel.prompt = t("no_connection")
         except Exception:
             pass
         self._nodes_sig = None

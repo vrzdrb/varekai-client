@@ -12,7 +12,6 @@ import urllib.parse
 import re
 import requests
 from pathlib import Path
-
 from utils import (
     get_os, get_arch, check_avx2_support, ensure_dirs, get_script_dir,
     is_admin, t, URL_FILE, CORE_BINARY, CORE_LOG, ARCHIVES_DIR,
@@ -253,30 +252,31 @@ def find_asset_for_platform(assets):
 
 # === ОБНОВЛЕНИЕ ЯДРА ===
 def update_core():
-    """Обновляет ядро prizrak-core до последней версии"""
+    """Обновляет ядро prizrak-core до последней версии.
+    Возвращает: 0=уже актуально, 1=обновлено, 2=ошибка"""
     tag, assets, err = get_latest_release_info(CORE_REPO)
     if err:
-        return Path(CORE_BINARY).exists()
+        return 2
     local_tag = get_latest_archived_version()
     if local_tag == tag and Path(CORE_BINARY).exists():
-        return True
+        return 0
     archived = find_archived_archive(tag) if local_tag == tag else None
     if archived:
-        return rollback_to_version(archived)
+        return 1 if rollback_to_version(archived) else 2
     asset = find_asset_for_platform(assets) if assets else None
     if not asset:
         asset = {"name": build_core_asset_name(tag)}
     archive_path = Path(asset["name"])
     success, _ = download_with_fallback(github_download_url(CORE_REPO, tag, asset["name"]), archive_path)
     if not success:
-        return Path(CORE_BINARY).exists()
+        return 2
     save_archive(archive_path, tag)
     temp_dir = Path("temp_extract")
     temp_dir.mkdir(exist_ok=True)
     success, _ = extract_archive(archive_path, temp_dir)
     if not success:
         archive_path.unlink(missing_ok=True)
-        return Path(CORE_BINARY).exists()
+        return 2
     binary_found = False
     for f in temp_dir.rglob("*"):
         if f.is_file() and not f.name.endswith(('.zip', '.gz')):
@@ -290,7 +290,7 @@ def update_core():
     archive_path.unlink(missing_ok=True)
     if binary_found and get_os() != "windows":
         os.chmod(CORE_BINARY, 0o755)
-    return binary_found or Path(CORE_BINARY).exists()
+    return 1 if binary_found else 2
 
 
 # === ПРОФИЛЬ ПОДПИСКИ ===
@@ -316,22 +316,23 @@ def validate_url(url):
 
 
 def update_profile():
-    """Скачивает и обновляет пользовательский профиль"""
+    """Скачивает и обновляет пользовательский профиль.
+    Возвращает: 1=обновлено, 2=ошибка"""
     profile_url = load_profile_url()
     if not profile_url:
-        return False
+        return 2
     valid, _ = validate_url(profile_url)
     if not valid:
-        return False
+        return 2
     try:
         response = requests.get(profile_url, timeout=15)
         if response.status_code == 200:
             CONFIG_CLEAN.write_text(response.text, encoding="utf-8")
             generate_smart_config()
-            return True
+            return 1
+        return 2
     except Exception:
-        pass
-    return False
+        return 2
 
 
 # === УПРАВЛЕНИЕ ЯДРОМ ===
@@ -350,7 +351,6 @@ def start_vpn():
         binary_path = script_dir / CORE_BINARY
         config_path = script_dir / CONFIG_SMART
         log_path = script_dir / CORE_LOG
-        # Очищаем VPN.log при каждом запуске
         if log_path.exists():
             log_path.unlink()
         log_path.touch()
