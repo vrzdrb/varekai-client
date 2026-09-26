@@ -5,6 +5,7 @@ import re
 import time
 from collections import deque
 import httpx
+from rich.text import Text
 from textual import events
 from textual.app import App, ComposeResult
 from textual.screen import ModalScreen
@@ -16,7 +17,8 @@ from textual.containers import Horizontal, VerticalScroll, Container
 from textual.reactive import reactive
 from pathlib import Path
 from utils import (
-    t, CORE_LOG, CORE_BINARY, load_settings, save_settings, set_language, get_language
+    t, CORE_LOG, CORE_BINARY, load_settings, save_settings, set_language, get_language,
+    replace_flag_emojis
 )
 from core import (
     get_core_pid, get_current_core_info, start_vpn, stop_vpn,
@@ -104,18 +106,6 @@ class ClashAPI:
             async with httpx.AsyncClient(timeout=2.0) as client:
                 r = await client.delete(
                     f"{self.base_url}/connections/{conn_id}",
-                    headers=self.headers,
-                )
-                return r.status_code in (200, 204)
-        except Exception:
-            return False
-
-    async def update_rule_providers(self):
-        """Обновляет все rule-providers через API ядра."""
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                r = await client.put(
-                    f"{self.base_url}/providers/rules",
                     headers=self.headers,
                 )
                 return r.status_code in (200, 204)
@@ -248,6 +238,9 @@ class ConnectionsScreen(ModalScreen):
         background: #3a2855;
         scrollbar-size: 1 1;
         scrollbar-gutter: stable;
+        scrollbar-background: #241736;
+        scrollbar-color: #F0C60A;
+        scrollbar-color-active: #f5d020;
     }
     #conn_empty {
         width: 100%; text-align: center;
@@ -279,7 +272,7 @@ class ConnectionsScreen(ModalScreen):
         self._sort_reverse = False
 
     def _conn_footer_text(self) -> str:
-        return f"[bold]   [bold #F0C60A]c[/] {t('key_close_conn')}[/]"
+        return f"[bold]   [bold #F0C60A]C[/] {t('key_close_conn')}[/]"
 
     def compose(self) -> ComposeResult:
         with Container(classes="conn-panel"):
@@ -425,8 +418,8 @@ class ConnectionsScreen(ModalScreen):
             return "DIRECT"
         last = chains[-1]
         if last == "PROXY" and self._proxy_now:
-            return f"PROXY [{self._proxy_now}]"
-        return last
+            return replace_flag_emojis(f"PROXY [{self._proxy_now}]")
+        return replace_flag_emojis(last)
 
     async def refresh_connections(self) -> None:
         try:
@@ -533,7 +526,7 @@ class VarekaiApp(App):
         width: 100%;
         height: 1;
         text-align: center;
-        color: #ffffff;
+        color: #1a1a1a;
         text-style: bold;
         margin: 0 0 1 0;
     }
@@ -545,14 +538,18 @@ class VarekaiApp(App):
     .btn-row { width: 100%; height: 3; margin: 1 0; }
     .btn-action {
         width: 1fr; height: 100%; margin: 0;
+        border: none;
         background: #F0C60A; color: #1a1a1a; text-style: bold;
     }
     .btn-action:hover { background: #f5d020; }
     .btn-sep { width: 1; height: 3; background: #3a2855; }
-
     .lang-row { width: 100%; height: 3; margin: 0 0 1 0; }
-    .btn-lang { width: 1fr; height: 100%; background: #5a4280; color: #F0C60A; }
-    .btn-lang:hover { background: #6b5099; }
+    .btn-lang {
+        width: 1fr; height: 100%;
+        border: none;
+        background: #F0C60A; color: #1a1a1a; text-style: bold;
+    }
+    .btn-lang:hover { background: #f5d020; }
 
     #log_title {
         width: 100%; text-align: center;
@@ -573,6 +570,9 @@ class VarekaiApp(App):
         color: #0CEBE0;
         border: none;
         scrollbar-size: 1 1;
+        scrollbar-background: #3a2855;
+        scrollbar-color: #F0C60A;
+        scrollbar-color-active: #f5d020;
     }
 
     #label_group { width: 100%; text-align: center; margin: 1 0; }
@@ -580,19 +580,26 @@ class VarekaiApp(App):
     Select { width: 100%; height: 3; background: transparent; margin: 0 0 1 0; }
     SelectCurrent {
         width: 100%; height: 100%;
-        border: tall #F0C60A;
-        background: #1a0a30; color: #0CEBE0;
+        padding: 0 1;
+        border: none;
+        background: #F0C60A;
+        color: #1a1a1a;
     }
-    SelectCurrent, SelectCurrent Static, SelectCurrent Label {
-        color: #0CEBE0 !important;
+    SelectCurrent Static, SelectCurrent Label {
+        background: transparent;
+        color: #1a1a1a !important;
+        text-style: bold;
+        height: 100%;
+        content-align-vertical: middle;
     }
     SelectCurrent:focus {
-        border: tall #F0C60A;
-        background: #1a0a30; color: #0CEBE0;
+        border: none;
+        background: #F0C60A;
+        color: #1a1a1a;
     }
 
     SelectOverlay {
-        border: tall #000000;
+        border: double #F0C60A;
         background: #1a0a30;
         height: auto;
         max-height: 100vh;
@@ -628,9 +635,17 @@ class VarekaiApp(App):
     .node-header .node-delay { width: 20%; }
     .node-header .node-status { width: 20%; }
 
-    #nodes_scroll { height: 1fr; background: #3a2855; }
+    #nodes_scroll {
+        height: 1fr;
+        background: #3a2855;
+        scrollbar-size: 1 1;
+        scrollbar-background: #241736;
+        scrollbar-color: #F0C60A;
+        scrollbar-color-active: #f5d020;
+    }
 
-    Button { background: #5a4280; color: #F0C60A; }
+    Button { background: #5a4280; color: #F0C60A; border: none; }
+
     Button:hover { background: #6b5099; }
     Label { color: #e0e0e0; text-style: bold; margin: 1 0; }
     Static { color: #e0e0e0; }
@@ -660,6 +675,8 @@ class VarekaiApp(App):
         ("r", "refresh_status", "Refresh"),
         ("l", "toggle_language", "Lang"),
         ("c", "show_connections", "Connections"),
+        ("pageup", "log_page_up", "Log page up"),
+        ("pagedown", "log_page_down", "Log page down"),
     ]
 
     vpn_running = reactive(False)
@@ -672,11 +689,12 @@ class VarekaiApp(App):
 
     def _footer_text(self) -> str:
         return (
-            f"[bold][bold #F0C60A]q[/] {t('key_quit')}    "
-            f"[bold #F0C60A]s[/] {t('key_toggle')}    "
-            f"[bold #F0C60A]r[/] {t('key_refresh')}    "
-            f"[bold #F0C60A]l[/] {t('key_lang')}    "
-            f"[bold #F0C60A]c[/] {t('key_connections')}[/]"
+            f"[bold][bold #F0C60A]Q[/] {t('key_quit')}    "
+            f"[bold #F0C60A]S[/] {t('key_toggle')}    "
+            f"[bold #F0C60A]R[/] {t('key_refresh')}    "
+            f"[bold #F0C60A]L[/] {t('key_lang')}    "
+            f"[bold #F0C60A]C[/] {t('key_connections')}    "
+            f"[bold #F0C60A]PgUp/PgDn[/] {t('key_log_scroll')}[/]"
         )
 
     def compose(self) -> ComposeResult:
@@ -748,7 +766,7 @@ class VarekaiApp(App):
         self.update_info_line()
 
     def update_info_line(self):
-        country = self.current_country or t("country_unknown")
+        country = replace_flag_emojis(self.current_country or t("country_unknown"))
         self.query_one("#info_label", Static).update(
             f"{get_current_core_info()} | {t('current_country', country=country)}"
         )
@@ -759,16 +777,18 @@ class VarekaiApp(App):
     def _render_log(self):
         widget = self.query_one("#brief_log", RichLog)
         widget.clear()
-        for line in self._active_buf():
-            widget.write(line)
+        if self.log_source == "core":
+            for line in self._core_buf:
+                widget.write(Text(line))
+        else:
+            for line in self._app_buf:
+                widget.write(line)
 
     def brief_log(self, message: str):
         self._app_buf.append(message)
         if self.log_source == "app":
             try:
-                from rich.text import Text
-                text = Text.from_markup(message)
-                self.query_one("#brief_log", RichLog).write(text)
+                self.query_one("#brief_log", RichLog).write(message)
             except Exception:
                 pass
 
@@ -777,7 +797,7 @@ class VarekaiApp(App):
         self._core_buf.append(line)
         if self.log_source == "core":
             try:
-                self.query_one("#brief_log", RichLog).write(line)
+                self.query_one("#brief_log", RichLog).write(Text(line))
             except Exception:
                 pass
 
@@ -807,6 +827,16 @@ class VarekaiApp(App):
         set_language(new_lang)
         self._update_ui_texts()
         self.brief_log(t("brief_lang_changed", lang=new_lang))
+
+    def action_log_page_up(self) -> None:
+        if isinstance(self.screen, ConnectionsScreen):
+            return
+        self.query_one("#brief_log", RichLog).scroll_page_up(animate=False)
+
+    def action_log_page_down(self) -> None:
+        if isinstance(self.screen, ConnectionsScreen):
+            return
+        self.query_one("#brief_log", RichLog).scroll_page_down(animate=False)
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         btn_id = event.button.id
@@ -868,7 +898,7 @@ class VarekaiApp(App):
         else:
             self.call_from_thread(self.brief_log, f"[bold #F50A0A]{t('vpn_start_fail')}[/]")
         self.call_from_thread(self.update_status)
-        # Обновление провайдеров правил ПОСЛЕ запуска VPN
+
         if ok:
             self.call_from_thread(self.brief_log, t("brief_updating_rules"))
             ok_rules = self._update_rule_providers_sync()
@@ -999,7 +1029,7 @@ class VarekaiApp(App):
                     dv = hist[-1].get("delay", 0)
                     delay = f"{dv}ms" if dv > 0 else "N/A"
                 alive = "alive" if nd.get("alive", True) else "dead"
-                display = node_name
+                display = replace_flag_emojis(node_name)
                 rows.append((node_name, display, delay, alive, node_name == now))
 
         sig = f"{group}|{[(r[1], r[2], r[3], r[4]) for r in rows]!r}"
@@ -1038,7 +1068,7 @@ class VarekaiApp(App):
 
         ok = await self.api.switch_proxy(group, node)
         if ok:
-            self.brief_log(t("switch_ok", group=group, node=node))
+            self.brief_log(t("switch_ok", group=group, node=replace_flag_emojis(node)))
             proxies = await self.api.get_proxies()
             if proxies:
                 proxy_grp = next((g for g in proxies if g.upper() == "PROXY"), None)
@@ -1085,7 +1115,7 @@ class VarekaiApp(App):
             labels = []
             for g in ordered:
                 now = proxies.get(g, {}).get("now", "")
-                labels.append((f"{g}  →  {now}" if now else g, g))
+                labels.append((replace_flag_emojis(f"{g}  →  {now}" if now else g), g))
             sig_opts = repr(labels)
             if sig_opts != self._opts_sig:
                 self._opts_sig = sig_opts

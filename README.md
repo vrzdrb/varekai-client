@@ -15,6 +15,7 @@ Maximum simplicity for everyone.
 - Keeps the last 3 core versions and can roll back
 - The core runs independently: closing the launcher does not stop the VPN
 - Russian and English languages
+- Supports mouse control 
 
 ## Supported platforms
 

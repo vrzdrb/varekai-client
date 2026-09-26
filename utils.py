@@ -83,6 +83,7 @@ STRINGS = {
         "key_connections": "Подключения",
         "key_close_conn": "Закрыть",
         "key_lang": "Язык",
+        "key_log_scroll": "Прокрутка лога",
         "lang_current_name": "Русский",
         "admin_required": "Для работы программы требуются права администратора (TUN-режим).",
         "admin_restart": "Перезапуск с правами администратора...",
@@ -114,6 +115,8 @@ STRINGS = {
         "core_update_fail": "Ошибка обновления ядра",
         "profile_updated": "Профиль обновлён",
         "profile_update_fail": "Ошибка обновления профиля",
+        "rule_provider_ok": "Провайдер правил '{name}' обновлён",
+        "rule_provider_fail": "Ошибка обновления провайдера '{name}'",
     },
     "en": {
         "not_installed": "not installed",
@@ -168,6 +171,7 @@ STRINGS = {
         "key_connections": "Connections",
         "key_close_conn": "Close",
         "key_lang": "Lang",
+        "key_log_scroll": "Log scroll",
         "lang_current_name": "English",
         "admin_required": "Administrator rights are required (TUN mode).",
         "admin_restart": "Restarting with admin rights...",
@@ -199,6 +203,8 @@ STRINGS = {
         "core_update_fail": "Failed to update core",
         "profile_updated": "Profile updated",
         "profile_update_fail": "Failed to update profile",
+        "rule_provider_ok": "Rule provider '{name}' updated",
+        "rule_provider_fail": "Failed to update rule provider '{name}'",
     }
 }
 
@@ -343,9 +349,33 @@ def setup_console():
     try:
         import ctypes
         kernel32 = ctypes.windll.kernel32
+        kernel32.SetConsoleOutputCP(65001)
+        kernel32.SetConsoleCP(65001)
         handle = kernel32.GetStdHandle(-11)
         mode = ctypes.c_ulong()
         if kernel32.GetConsoleMode(handle, ctypes.byref(mode)):
             kernel32.SetConsoleMode(handle, mode.value | 0x0004)
     except Exception:
         pass
+
+
+def replace_flag_emojis(text: str) -> str:
+    """На Windows заменяет эмодзи-флаги (пары региональных индикаторов)
+    на текстовые коды стран в квадратных скобках: в Windows нет глифов флагов."""
+    if get_os() != "windows":
+        return text
+    out = []
+    i = 0
+    n = len(text)
+    while i < n:
+        cp = ord(text[i])
+        if 0x1F1E6 <= cp <= 0x1F1FF and i + 1 < n:
+            cp2 = ord(text[i + 1])
+            if 0x1F1E6 <= cp2 <= 0x1F1FF:
+                code = chr(cp - 0x1F1E6 + 65) + chr(cp2 - 0x1F1E6 + 65)
+                out.append(f"[{code}]")
+                i += 2
+                continue
+        out.append(text[i])
+        i += 1
+    return "".join(out)
