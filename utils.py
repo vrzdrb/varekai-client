@@ -1,23 +1,53 @@
-import os
-import sys
 import json
+import os
 import platform
+import shlex
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
+
+def get_script_dir():
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent
+
+
+def get_os():
+    os_name = platform.system().lower()
+    if os_name == "windows":
+        return "windows"
+    if os_name == "darwin":
+        return "darwin"
+    return "linux"
+
+
+def get_arch():
+    machine = platform.machine().lower()
+    if machine in ("x86_64", "amd64"):
+        return "amd64"
+    if machine in ("aarch64", "arm64"):
+        return "arm64"
+    raise RuntimeError(f"Unsupported architecture: {machine or 'unknown'}")
+
+
+APP_DIR = get_script_dir()
+
 # === КОНСТАНТЫ ===
-URL_FILE = Path("URL.txt")
-CORE_BINARY = "prizrak-core.exe" if platform.system().lower() == "windows" else "prizrak-core"
-CORE_LOG = Path("VPN.log")
-ARCHIVES_DIR = Path("archives")
-CONFIG_CLEAN = Path("config.yaml")
-CONFIG_SMART = Path("smart-config.yaml")
-MIRRORS_FILE = Path("mirrors.txt")
-SETTINGS_FILE = Path("settings.json")
+URL_FILE = APP_DIR / "URL.txt"
+CORE_BINARY = "prizrak-core.exe" if get_os() == "windows" else "prizrak-core"
+CORE_LOG = APP_DIR / "VPN.log"
+CORE_VERSION_FILE = APP_DIR / "core-version.txt"
+ARCHIVES_DIR = APP_DIR / "archives"
+CONFIG_CLEAN = APP_DIR / "config.yaml"
+CONFIG_SMART = APP_DIR / "smart-config.yaml"
+MIRRORS_FILE = APP_DIR / "mirrors.txt"
+SETTINGS_FILE = APP_DIR / "settings.json"
 
 CORE_REPO = "legiz-ru/Prizrak-Core"
 MAX_ARCHIVES = 3
+APP_VERSION = "0.9.6"
 FORCE_ADMIN_AT_START = True
 
 DEFAULT_MIRRORS = [
@@ -34,7 +64,7 @@ STRINGS = {
         "not_installed": "не установлено",
         "status_running": "VPN: ЗАПУЩЕН",
         "status_stopped": "VPN: ОСТАНОВЛЕН",
-        "btn_toggle_on": "▶ ЗАПУСТИТЬ VPN",
+        "btn_toggle_on": "» ЗАПУСТИТЬ VPN",
         "btn_toggle_off": "■ ОСТАНОВИТЬ VPN",
         "btn_update_run": "🔄 Обновить и запустить",
         "btn_logs": "📜 Логи",
@@ -67,6 +97,8 @@ STRINGS = {
         "switch_ok": "{group}: выбрана нода {node}",
         "switch_fail": "Не удалось переключить группу {group}",
         "reset_auto": "⟳ Вернуть автовыбор",
+        "status_alive": "доступен",
+        "status_dead": "недоступен",
         "reset_auto_ok": "Автовыбор восстановлен",
         "reset_auto_fail": "Не удалось восстановить автовыбор",
         "no_connection": "VPN выключен",
@@ -74,12 +106,12 @@ STRINGS = {
         "log_core": "Лог ядра",
         "conn_title": "Активные подключения",
         "conn_close": "✕ Закрыть",
-        "conn_close_all": "Прервать все",
+        "conn_close_all": "✕ Прервать все",
         "conn_empty": "Нет активных подключений",
         "conn_del_fail": "Не удалось закрыть соединение",
         "key_quit": "Выход",
         "key_toggle": "Вкл / Выкл VPN",
-        "key_refresh": "Обновить",
+        "key_rollback": "Версии ядра",
         "key_connections": "Подключения",
         "key_close_conn": "Закрыть",
         "key_lang": "Язык",
@@ -117,12 +149,23 @@ STRINGS = {
         "profile_update_fail": "Ошибка обновления профиля",
         "rule_provider_ok": "Провайдер правил '{name}' обновлён",
         "rule_provider_fail": "Ошибка обновления провайдера '{name}'",
+        "core_running_update": "Обновление невозможно: сначала остановите VPN",
+        "core_update_in_progress": "Обновление уже выполняется, подождите...",
+        "core_running_rollback": "Откат невозможен: сначала остановите VPN",
+        "rollback_title": "Версии ядра",
+        "rollback_empty": "Нет архивов для отката",
+        "rollback_current": "текущая",
+        "rollback_cancel": "✕ Отмена",
+        "core_rollback_ok": "Ядро откачено на версию {version}",
+        "core_rollback_fail": "Не удалось откатить ядро",
+        "arch_broken": "Архив ядра повреждён или пуст",
+        "no_asset": "Не найден подходящий ассет релиза для этой платформы",
     },
     "en": {
         "not_installed": "not installed",
         "status_running": "VPN: RUNNING",
         "status_stopped": "VPN: STOPPED",
-        "btn_toggle_on": "▶ START VPN",
+        "btn_toggle_on": "» START VPN",
         "btn_toggle_off": "■ STOP VPN",
         "btn_update_run": "🔄 Update & Start",
         "btn_logs": "📜 Logs",
@@ -155,6 +198,8 @@ STRINGS = {
         "switch_ok": "{group}: node {node} selected",
         "switch_fail": "Failed to switch group {group}",
         "reset_auto": "⟳ Restore auto-select",
+        "status_alive": "alive",
+        "status_dead": "dead",
         "reset_auto_ok": "Auto-select restored",
         "reset_auto_fail": "Failed to restore auto-select",
         "no_connection": "VPN OFF",
@@ -162,12 +207,12 @@ STRINGS = {
         "log_core": "Core log",
         "conn_title": "Active connections",
         "conn_close": "✕ Close",
-        "conn_close_all": "Close all",
+        "conn_close_all": "✕ Close all",
         "conn_empty": "No active connections",
         "conn_del_fail": "Failed to close connection",
         "key_quit": "Quit",
         "key_toggle": "On / Off VPN",
-        "key_refresh": "Refresh",
+        "key_rollback": "Core versions",
         "key_connections": "Connections",
         "key_close_conn": "Close",
         "key_lang": "Lang",
@@ -205,7 +250,18 @@ STRINGS = {
         "profile_update_fail": "Failed to update profile",
         "rule_provider_ok": "Rule provider '{name}' updated",
         "rule_provider_fail": "Failed to update rule provider '{name}'",
-    }
+        "core_running_update": "Update is not possible: stop the VPN first",
+        "core_update_in_progress": "Update already in progress, please wait...",
+        "core_running_rollback": "Rollback is not possible: stop the VPN first",
+        "rollback_title": "Core versions",
+        "rollback_empty": "No archives to roll back",
+        "rollback_current": "current",
+        "rollback_cancel": "✕ Cancel",
+        "core_rollback_ok": "Core rolled back to version {version}",
+        "core_rollback_fail": "Failed to roll back core",
+        "arch_broken": "Core archive is broken or empty",
+        "no_asset": "No suitable release asset found for this platform",
+    },
 }
 
 _language = None
@@ -237,32 +293,6 @@ def t(key, **kwargs):
         return template.format(**kwargs)
     except Exception:
         return template
-
-
-def get_script_dir():
-    if getattr(sys, "frozen", False):
-        return Path(sys.executable).resolve().parent
-    return Path(__file__).resolve().parent
-
-
-def get_os():
-    os_name = platform.system().lower()
-    if os_name == "windows":
-        return "windows"
-    if os_name == "darwin":
-        return "darwin"
-    return "linux"
-
-
-def get_arch():
-    machine = platform.machine().lower()
-    if machine in ("x86_64", "amd64"):
-        return "amd64"
-    if machine in ("x86", "i386", "i686"):
-        return "386"
-    if machine in ("aarch64", "arm64"):
-        return "arm64"
-    return "amd64"
 
 
 def check_avx2_support():
@@ -308,8 +338,14 @@ def restart_as_admin():
             ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, params, None, 1)
             sys.exit(0)
         elif platform.system().lower() == "darwin":
-            args_str = " ".join(sys.argv)
-            subprocess.Popen(["osascript", "-e", f'do shell script "{sys.executable} {args_str}" with administrator privileges'])
+            shell_cmd = " ".join(
+                [shlex.quote(sys.executable)] + [shlex.quote(a) for a in sys.argv]
+            )
+            applescript_cmd = shell_cmd.replace("\\", "\\\\").replace('"', '\\"')
+            subprocess.Popen([
+                "osascript", "-e",
+                f'do shell script "{applescript_cmd}" with administrator privileges'
+            ])
             sys.exit(0)
         else:
             if shutil.which("sudo"):
@@ -379,3 +415,4 @@ def replace_flag_emojis(text: str) -> str:
         out.append(text[i])
         i += 1
     return "".join(out)
+

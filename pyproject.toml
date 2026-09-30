@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "varekai-client"
+version = "0.9.6:"
+description = "Cross-platform TUI launcher for prizrak-core/mihomo"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+dependencies = [
+    "textual",
+    "httpx",
+    "requests",
+    "ruamel.yaml",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "ruff",
+]
+
+[tool.setuptools]
+py-modules = [
+    "main",
+    "utils",
+    "config",
+    "core",
+    "clash_api",
+    "tui",
+    "tui_app",
+    "tui_widgets",
+    "tui_connections",
+    "tui_rollback",
+]
+
+[tool.ruff]
+line-length = 110
+target-version = "py39"
+
+# Мягкий конфиг: только явные проблемы, без стилистического пресса.
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]

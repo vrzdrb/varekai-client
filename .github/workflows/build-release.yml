@@ -40,10 +40,10 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install dependencies
+      - name: Install dependencies (latest)
         shell: bash
         run: |
-          pip install pyinstaller requests ruamel.yaml textual httpx
+          pip install -e . pyinstaller
 
       - name: Create mirrors list
         shell: bash
