@@ -413,8 +413,9 @@ class VarekaiApp(App):
 
     def update_info_line(self):
         country = replace_flag_emojis(self.current_country or t("country_unknown"))
+        # Text(...) — иначе [RU] из замены флагов съедается Rich-разметкой Static
         self.query_one("#info_label", Static).update(
-            f"{get_current_core_info()} | {t('current_country', country=country)}"
+            Text(f"{get_current_core_info()} | {t('current_country', country=country)}")
         )
 
     def _render_log(self):
@@ -746,7 +747,11 @@ class VarekaiApp(App):
                     dv = hist[-1].get("delay", 0)
                     delay = f"{dv}ms" if dv > 0 else "N/A"
                 alive = t("status_alive") if nd.get("alive", True) else t("status_dead")
-                display = replace_flag_emojis(node_name)
+                # format_group_name: у подгрупп (Автовыбор и т.п.) в таблице
+                # та же иконка ☻/●, что и в выпадающем списке групп
+                display = format_group_name(
+                    node_name, str(nd.get("type", "")).lower() == "smart"
+                )
                 rows.append((node_name, display, delay, alive, node_name == now))
 
         sig = f"{group}|{[(r[1], r[2], r[3], r[4]) for r in rows]!r}"
@@ -785,7 +790,8 @@ class VarekaiApp(App):
 
         ok = await self.api.switch_proxy(group, node)
         if ok:
-            self.brief_log(t("switch_ok", group=group, node=replace_flag_emojis(node)))
+            node_txt = replace_flag_emojis(node).replace("[", "\\[")
+            self.brief_log(t("switch_ok", group=group, node=node_txt))
             proxies = await self.api.get_proxies()
             if proxies:
                 proxy_grp = next((g for g in proxies if g.upper() == "PROXY"), None)
@@ -834,9 +840,10 @@ class VarekaiApp(App):
                 gdata = proxies.get(g, {})
                 now = gdata.get("now", "")
                 g_disp = format_group_name(g, str(gdata.get("type", "")).lower() == "smart")
-                labels.append(
-                    (f"{g_disp}  →  {replace_flag_emojis(now)}" if now else g_disp, g)
-                )
+                # Экранируем '[' — опции Select рендерятся через разметку
+                # и [RU] из замены флагов съедался бы как тег.
+                label = (f"{g_disp}  →  {replace_flag_emojis(now)}" if now else g_disp)
+                labels.append((label.replace("[", "\\["), g))
             sig_opts = repr(labels)
             if sig_opts != self._opts_sig:
                 self._opts_sig = sig_opts

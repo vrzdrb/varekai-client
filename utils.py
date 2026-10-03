@@ -75,7 +75,13 @@ def _read_app_version():
     return "0.0.0"
 
 
-APP_VERSION = _read_app_version()
+try:
+    # Файл генерируется CI перед PyInstaller: 'BUILD_VERSION = "0.9.7"'
+    from _build_version import BUILD_VERSION as _BUILD_VERSION
+except Exception:
+    _BUILD_VERSION = None
+
+APP_VERSION = _BUILD_VERSION or _read_app_version()
 
 DEFAULT_MIRRORS = [
     "https://ghproxy.net/",
@@ -348,6 +354,12 @@ def _windows_cpuid():
         b"\x5b\xc3"
     )
     kernel32 = ctypes.windll.kernel32
+    # КРИТИЧНО: без restype=c_void_p ctypes обрезает адрес до 32 бит,
+    # memmove падает с access violation и AVX2 молча считается отсутствующим.
+    kernel32.VirtualAlloc.restype = ctypes.c_void_p
+    kernel32.VirtualAlloc.argtypes = [ctypes.c_void_p, ctypes.c_size_t, ctypes.c_ulong, ctypes.c_ulong]
+    kernel32.VirtualFree.argtypes = [ctypes.c_void_p, ctypes.c_size_t, ctypes.c_ulong]
+    kernel32.VirtualFree.restype = ctypes.c_int
     MEM_COMMIT, PAGE_RWX = 0x1000, 0x40
     addr = kernel32.VirtualAlloc(None, len(code), MEM_COMMIT, PAGE_RWX)
     if not addr:
@@ -385,6 +397,10 @@ def _windows_has_avx2():
 
     code = b"\x0f\x01\xd0\xc3"  # xgetbv; ret
     kernel32 = ctypes.windll.kernel32
+    kernel32.VirtualAlloc.restype = ctypes.c_void_p
+    kernel32.VirtualAlloc.argtypes = [ctypes.c_void_p, ctypes.c_size_t, ctypes.c_ulong, ctypes.c_ulong]
+    kernel32.VirtualFree.argtypes = [ctypes.c_void_p, ctypes.c_size_t, ctypes.c_ulong]
+    kernel32.VirtualFree.restype = ctypes.c_int
     addr = kernel32.VirtualAlloc(None, len(code), 0x1000, 0x40)
     if not addr:
         return False
@@ -401,6 +417,20 @@ def _windows_has_avx2():
     return bool(ebx7 & (1 << 5))
 
 
+def _windows_has_avx2_name_fallback():
+    """Запасной вариант: по имени CPU через PowerShell CIM
+    (wmic в Windows 11 отсутствует). Старые бренды без AVX2."""
+    try:
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", "(Get-CimInstance Win32_Processor).Name"],
+            capture_output=True, text=True, timeout=10,
+        )
+        name = (result.stdout or "").lower()
+        return not any(old in name for old in ("pentium", "celeron", "atom"))
+    except Exception:
+        return False
+
+
 def check_avx2_support():
     arch = get_arch()
     if arch != "amd64":
@@ -413,8 +443,8 @@ def check_avx2_support():
             try:
                 return _windows_has_avx2()
             except Exception:
-                # Консервативный fallback: без AVX2 не подтверждён
-                return False
+                # CPUID недоступен (политики безопасности и т.п.) — пробуем по имени CPU
+                return _windows_has_avx2_name_fallback()
         elif get_os() == "darwin":
             return True
     except Exception:
