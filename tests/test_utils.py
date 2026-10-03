@@ -1,4 +1,4 @@
-:Жimport pytest
+import pytest
 
 import utils
 
