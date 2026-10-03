@@ -110,6 +110,7 @@ class ConnectionsScreen(ModalScreen):
         self._scroll = None
         self._empty = None
         self._proxy_now = None
+        self._proxies_cache = {}
         self._sort_column = None
         self._sort_reverse = False
 
@@ -263,14 +264,35 @@ class ConnectionsScreen(ModalScreen):
         host = str(meta.get("host") or meta.get("destinationIP") or "")
         return (rule, host)
 
+    def _resolve_node_name(self, name: str) -> str:
+        """Если name — группа, чей текущий выбор ссылается на другую группу
+        (Epic Games -> Автовыбор -> ...), спускаемся до конкретной ноды.
+        Реальные ноды в /proxies не имеют поля now — цикл остановится сам,
+        множество seen страхует от кольцевых настроек."""
+        seen = set()
+        while name in self._proxies_cache and name not in seen:
+            seen.add(name)
+            data = self._proxies_cache.get(name) or {}
+            now = data.get("now")
+            if not now or now == name:
+                break
+            name = str(now)
+        return str(name)
+
     def _resolve_server(self, c) -> str:
         chains = c.get("chains") or []
         if not chains:
             return "DIRECT"
-        last = chains[-1]
+        last = str(chains[-1])
         if last == "PROXY" and self._proxy_now:
-            # proxy_now уже содержит флаг/имя ноды — просто очищаем его
-            return f"PROXY {replace_flag_emojis(str(self._proxy_now))}"
+            resolved = self._resolve_node_name(str(self._proxy_now))
+            return f"PROXY {replace_flag_emojis(resolved)}"
+        # Последнее звено — группа: показываем её имя и конечную ноду
+        # (подгруппы вроде Автовыбор прозрачно проскакиваются резолвером).
+        if (self._proxies_cache.get(last) or {}).get("now"):
+            group = replace_flag_emojis(last).strip()
+            resolved = replace_flag_emojis(self._resolve_node_name(last))
+            return f"{group} → {resolved}"
         return replace_flag_emojis(last)
 
     async def refresh_connections(self) -> None:
@@ -278,8 +300,9 @@ class ConnectionsScreen(ModalScreen):
             proxies = await self.api.get_proxies()
             proxy_data = proxies.get("PROXY", {})
             self._proxy_now = proxy_data.get("now", "")
+            self._proxies_cache = proxies
         except Exception:
-            pass
+            self._proxies_cache = {}
         conns = (await self.api.get_connections()) or []
         try:
             conns.sort(key=self._conn_sort_key)
