@@ -1,6 +1,7 @@
 import json
 import os
 import platform
+import re
 import shlex
 import shutil
 import subprocess
@@ -47,8 +48,34 @@ SETTINGS_FILE = APP_DIR / "settings.json"
 
 CORE_REPO = "legiz-ru/Prizrak-Core"
 MAX_ARCHIVES = 3
-APP_VERSION = "0.9.6"
 FORCE_ADMIN_AT_START = True
+
+
+def _read_app_version():
+    """Версия приложения из pyproject.toml — при разработке читаем файл
+    рядом с исходниками, в PyInstaller-сборке — из временного каталога
+    бандла (pyproject.toml кладётся туда через --add-data)."""
+    candidates = []
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        candidates.append(Path(meipass) / "pyproject.toml")
+    candidates.append(get_script_dir() / "pyproject.toml")
+    for path in candidates:
+        try:
+            if path.exists():
+                match = re.search(
+                    r'^version\s*=\s*"([^"]+)"',
+                    path.read_text(encoding="utf-8"),
+                    re.M,
+                )
+                if match:
+                    return match.group(1)
+        except Exception:
+            continue
+    return "0.0.0"
+
+
+APP_VERSION = _read_app_version()
 
 DEFAULT_MIRRORS = [
     "https://ghproxy.net/",
