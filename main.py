@@ -23,6 +23,7 @@ from utils import (
     t,
 )
 
+
 def request_profile_url():
     if URL_FILE.exists():
         url = URL_FILE.read_text(encoding="utf-8").strip()
@@ -47,6 +48,7 @@ def install_close_handler():
         return
     try:
         import ctypes
+
         from core import get_core_pid, stop_vpn
 
         handler_type = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_ulong)
@@ -103,4 +105,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 

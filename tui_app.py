@@ -402,13 +402,13 @@ class VarekaiApp(App):
         if pid:
             status_label.add_class("status-on")
             status_label.update(t("status_running"))
-            btn_toggle.label = self._toggle_caption()
             self.vpn_running = True
+            btn_toggle.label = self._toggle_caption()
         else:
             status_label.add_class("status-off")
             status_label.update(t("status_stopped"))
-            btn_toggle.label = self._toggle_caption()
             self.vpn_running = False
+            btn_toggle.label = self._toggle_caption()
         self.update_info_line()
 
     def update_info_line(self):
@@ -451,6 +451,20 @@ class VarekaiApp(App):
         self.query_one("#log_title", Static).update(title)
         self._render_log()
 
+    def _request_toggle(self) -> None:
+        """Мгновенная реакция UI + запуск рабочего потока.
+        Без этого экран не менялся все секунды, пока ядро стартует,
+        а при исключении в воркере оставался рассинхронизированным."""
+        btn_toggle = self.query_one("#btn_toggle", Button)
+        if btn_toggle.disabled:
+            return  # операция уже выполняется
+        btn_toggle.disabled = True
+        starting = not self.vpn_running
+        message = t("brief_starting") if starting else t("brief_stopping")
+        self.query_one("#status_label", Static).update(message)
+        self.brief_log(message)
+        self.run_worker(self._worker_toggle, thread=True)
+
     def action_quit(self) -> None:
         if self.vpn_running:
             self.push_screen(QuitScreen(), self._on_quit_answer)
@@ -470,7 +484,7 @@ class VarekaiApp(App):
         self.call_from_thread(self.exit)
 
     def action_toggle_vpn(self):
-        self.run_worker(self._worker_toggle, thread=True)
+        self._request_toggle()
 
     def action_show_rollback(self):
         if isinstance(self.screen, (ConnectionsScreen, RollbackScreen)):
@@ -525,7 +539,7 @@ class VarekaiApp(App):
         # и ConnectionRow — сюда они доходить не должны.
         btn_id = event.button.id
         if btn_id == "btn_toggle":
-            self.run_worker(self._worker_toggle, thread=True)
+            self._request_toggle()
         elif btn_id == "btn_update_run":
             self.run_worker(self._worker_update_and_run, thread=True)
         elif btn_id == "btn_lang":
@@ -540,20 +554,30 @@ class VarekaiApp(App):
         self.call_from_thread(self.brief_log, f"[bold {color}]{msg}[/]")
 
     def _worker_toggle(self):
-        if self.vpn_running:
-            self.call_from_thread(self.brief_log, t("brief_stopping"))
-            ok, msg = stop_vpn()
+        try:
+            if self.vpn_running:
+                ok, msg = stop_vpn()
+            else:
+                if not Path(CORE_BINARY).exists():
+                    self.call_from_thread(
+                        self.brief_log, f"[bold #F50A0A]{t('core_not_found')}[/]"
+                    )
+                    return
+                ok, msg = start_vpn()
             self._log_result(ok, msg)
-        else:
-            if not Path(CORE_BINARY).exists():
-                self.call_from_thread(
-                    self.brief_log, f"[bold #F50A0A]{t('core_not_found')}[/]"
-                )
-                return
-            self.call_from_thread(self.brief_log, t("brief_starting"))
-            ok, msg = start_vpn()
-            self._log_result(ok, msg)
-        self.call_from_thread(self.update_status)
+        finally:
+            def _finish() -> None:
+                try:
+                    self.query_one("#btn_toggle", Button).disabled = False
+                    self.update_status()
+                    self.refresh()
+                except Exception:
+                    pass
+
+            try:
+                self.call_from_thread(_finish)
+            except Exception:
+                pass
 
     def _worker_update_and_run(self):
         if self.vpn_running or get_core_pid():

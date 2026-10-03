@@ -3,10 +3,10 @@
 """
 import re
 
+from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Container
 from textual.widget import Widget
-from rich.text import Text
 from textual.widgets import Static
 
 from utils import replace_flag_emojis
