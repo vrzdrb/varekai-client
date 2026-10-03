@@ -6,10 +6,13 @@ config.yaml
 smart-config.yaml
 settings.json
 mirrors.txt
+core-version.txt
 
 # === Ядро и рантайм-файлы ===
 prizrak-core
 prizrak-core.exe
+*.new
+*.part
 *.log
 cache.db
 ASN.mmdb
@@ -31,6 +34,7 @@ __pycache__/
 build/
 dist/
 .venv/
+*.egg-info/
 
 # === Мусор ОС ===
 .DS_Store

@@ -1,23 +1,53 @@
-import os
-import sys
 import json
+import os
 import platform
+import shlex
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
+
+def get_script_dir():
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent
+
+
+def get_os():
+    os_name = platform.system().lower()
+    if os_name == "windows":
+        return "windows"
+    if os_name == "darwin":
+        return "darwin"
+    return "linux"
+
+
+def get_arch():
+    machine = platform.machine().lower()
+    if machine in ("x86_64", "amd64"):
+        return "amd64"
+    if machine in ("aarch64", "arm64"):
+        return "arm64"
+    raise RuntimeError(f"Unsupported architecture: {machine or 'unknown'}")
+
+
+APP_DIR = get_script_dir()
+
 # === КОНСТАНТЫ ===
-URL_FILE = Path("URL.txt")
-CORE_BINARY = "prizrak-core.exe" if platform.system().lower() == "windows" else "prizrak-core"
-CORE_LOG = Path("VPN.log")
-ARCHIVES_DIR = Path("archives")
-CONFIG_CLEAN = Path("config.yaml")
-CONFIG_SMART = Path("smart-config.yaml")
-MIRRORS_FILE = Path("mirrors.txt")
-SETTINGS_FILE = Path("settings.json")
+URL_FILE = APP_DIR / "URL.txt"
+CORE_BINARY = "prizrak-core.exe" if get_os() == "windows" else "prizrak-core"
+CORE_LOG = APP_DIR / "VPN.log"
+CORE_VERSION_FILE = APP_DIR / "core-version.txt"
+ARCHIVES_DIR = APP_DIR / "archives"
+CONFIG_CLEAN = APP_DIR / "config.yaml"
+CONFIG_SMART = APP_DIR / "smart-config.yaml"
+MIRRORS_FILE = APP_DIR / "mirrors.txt"
+SETTINGS_FILE = APP_DIR / "settings.json"
 
 CORE_REPO = "legiz-ru/Prizrak-Core"
 MAX_ARCHIVES = 3
+APP_VERSION = "0.9.6"
 FORCE_ADMIN_AT_START = True
 
 DEFAULT_MIRRORS = [
@@ -33,11 +63,14 @@ STRINGS = {
     "ru": {
         "not_installed": "не установлено",
         "status_running": "VPN: ЗАПУЩЕН",
+        "quit_dialog_msg": "Оставить ли VPN работающим в фоне?",
+        "quit_dialog_yes": "Да",
+        "quit_dialog_no": "Нет",
         "status_stopped": "VPN: ОСТАНОВЛЕН",
-        "btn_toggle_on": "▶ ЗАПУСТИТЬ VPN",
-        "btn_toggle_off": "■ ОСТАНОВИТЬ VPN",
-        "btn_update_run": "🔄 Обновить и запустить",
-        "btn_logs": "📜 Логи",
+        "btn_toggle_on": "ЗАПУСТИТЬ VPN",
+        "btn_toggle_off": "ОСТАНОВИТЬ VPN",
+        "btn_update_run": "Обновить и запустить",
+        "btn_logs": "Логи",
         "brief_starting": "Запуск VPN...",
         "brief_stopping": "Остановка VPN...",
         "brief_checking": "Проверка обновлений ядра...",
@@ -53,6 +86,8 @@ STRINGS = {
         "col_latency": "Задержка",
         "col_status": "Статус",
         "col_domain": "Адрес / домен",
+        "col_sport": "Исх. порт",
+        "col_dport": "Порт хоста",
         "col_server": "Сервер",
         "col_rule": "Правило",
         "col_dspeed": "↓ Скорость",
@@ -67,19 +102,21 @@ STRINGS = {
         "switch_ok": "{group}: выбрана нода {node}",
         "switch_fail": "Не удалось переключить группу {group}",
         "reset_auto": "⟳ Вернуть автовыбор",
+        "status_alive": "доступен",
+        "status_dead": "недоступен",
         "reset_auto_ok": "Автовыбор восстановлен",
         "reset_auto_fail": "Не удалось восстановить автовыбор",
         "no_connection": "VPN выключен",
         "log_app": "Лог приложения",
         "log_core": "Лог ядра",
         "conn_title": "Активные подключения",
-        "conn_close": "✕ Закрыть",
-        "conn_close_all": "Прервать все",
+        "conn_close": "[X] Закрыть",
+        "conn_close_all": "[X] Прервать все",
         "conn_empty": "Нет активных подключений",
         "conn_del_fail": "Не удалось закрыть соединение",
         "key_quit": "Выход",
         "key_toggle": "Вкл / Выкл VPN",
-        "key_refresh": "Обновить",
+        "key_rollback": "Версии ядра",
         "key_connections": "Подключения",
         "key_close_conn": "Закрыть",
         "key_lang": "Язык",
@@ -117,15 +154,29 @@ STRINGS = {
         "profile_update_fail": "Ошибка обновления профиля",
         "rule_provider_ok": "Провайдер правил '{name}' обновлён",
         "rule_provider_fail": "Ошибка обновления провайдера '{name}'",
+        "core_running_update": "Обновление невозможно: сначала остановите VPN",
+        "core_update_in_progress": "Обновление уже выполняется, подождите...",
+        "core_running_rollback": "Откат невозможен: сначала остановите VPN",
+        "rollback_title": "Версии ядра",
+        "rollback_empty": "Нет архивов для отката",
+        "rollback_current": "текущая",
+        "rollback_cancel": "[X] Отмена",
+        "core_rollback_ok": "Ядро откачено на версию {version}",
+        "core_rollback_fail": "Не удалось откатить ядро",
+        "arch_broken": "Архив ядра повреждён или пуст",
+        "no_asset": "Не найден подходящий ассет релиза для этой платформы",
     },
     "en": {
         "not_installed": "not installed",
         "status_running": "VPN: RUNNING",
+        "quit_dialog_msg": "Leave VPN running in the background?",
+        "quit_dialog_yes": "Yes",
+        "quit_dialog_no": "No",
         "status_stopped": "VPN: STOPPED",
-        "btn_toggle_on": "▶ START VPN",
-        "btn_toggle_off": "■ STOP VPN",
-        "btn_update_run": "🔄 Update & Start",
-        "btn_logs": "📜 Logs",
+        "btn_toggle_on": "START VPN",
+        "btn_toggle_off": "STOP VPN",
+        "btn_update_run": "Update & Start",
+        "btn_logs": "Logs",
         "brief_starting": "Starting VPN...",
         "brief_stopping": "Stopping VPN...",
         "brief_checking": "Checking core updates...",
@@ -141,6 +192,8 @@ STRINGS = {
         "col_latency": "Latency",
         "col_status": "Status",
         "col_domain": "Address / domain",
+        "col_sport": "Src port",
+        "col_dport": "Dst port",
         "col_server": "Server",
         "col_rule": "Rule",
         "col_dspeed": "↓ Speed",
@@ -155,19 +208,21 @@ STRINGS = {
         "switch_ok": "{group}: node {node} selected",
         "switch_fail": "Failed to switch group {group}",
         "reset_auto": "⟳ Restore auto-select",
+        "status_alive": "alive",
+        "status_dead": "dead",
         "reset_auto_ok": "Auto-select restored",
         "reset_auto_fail": "Failed to restore auto-select",
         "no_connection": "VPN OFF",
         "log_app": "App log",
         "log_core": "Core log",
         "conn_title": "Active connections",
-        "conn_close": "✕ Close",
-        "conn_close_all": "Close all",
+        "conn_close": "[X] Close",
+        "conn_close_all": "[X] Close all",
         "conn_empty": "No active connections",
         "conn_del_fail": "Failed to close connection",
         "key_quit": "Quit",
         "key_toggle": "On / Off VPN",
-        "key_refresh": "Refresh",
+        "key_rollback": "Core versions",
         "key_connections": "Connections",
         "key_close_conn": "Close",
         "key_lang": "Lang",
@@ -205,7 +260,18 @@ STRINGS = {
         "profile_update_fail": "Failed to update profile",
         "rule_provider_ok": "Rule provider '{name}' updated",
         "rule_provider_fail": "Failed to update rule provider '{name}'",
-    }
+        "core_running_update": "Update is not possible: stop the VPN first",
+        "core_update_in_progress": "Update already in progress, please wait...",
+        "core_running_rollback": "Rollback is not possible: stop the VPN first",
+        "rollback_title": "Core versions",
+        "rollback_empty": "No archives to roll back",
+        "rollback_current": "current",
+        "rollback_cancel": "[X] Cancel",
+        "core_rollback_ok": "Core rolled back to version {version}",
+        "core_rollback_fail": "Failed to roll back core",
+        "arch_broken": "Core archive is broken or empty",
+        "no_asset": "No suitable release asset found for this platform",
+    },
 }
 
 _language = None
@@ -239,30 +305,73 @@ def t(key, **kwargs):
         return template
 
 
-def get_script_dir():
-    if getattr(sys, "frozen", False):
-        return Path(sys.executable).resolve().parent
-    return Path(__file__).resolve().parent
+def _windows_cpuid():
+    """Возвращает callable cpuid(leaf, subleaf) -> (eax, ebx, ecx, edx)
+    через исполняемую страницу памяти (ctypes, без внешних утилит).
+    Windows x64 ABI: аргументы в RCX, RDX, R8."""
+    import ctypes
+
+    # push rbx; mov eax,ecx; mov ecx,edx; cpuid;
+    # mov [r8],eax; mov [r8+4],ebx; mov [r8+8],ecx; mov [r8+12],edx;
+    # pop rbx; ret
+    code = (
+        b"\x53\x89\xc8\x89\xd1\x0f\xa2"
+        b"\x41\x89\x00\x41\x89\x58\x04"
+        b"\x41\x89\x48\x08\x41\x89\x50\x0c"
+        b"\x5b\xc3"
+    )
+    kernel32 = ctypes.windll.kernel32
+    MEM_COMMIT, PAGE_RWX = 0x1000, 0x40
+    addr = kernel32.VirtualAlloc(None, len(code), MEM_COMMIT, PAGE_RWX)
+    if not addr:
+        raise RuntimeError("VirtualAlloc failed")
+    try:
+        ctypes.memmove(addr, code, len(code))
+        fn_type = ctypes.CFUNCTYPE(
+            None, ctypes.c_uint32, ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint32)
+        )
+        fn = fn_type(addr)
+
+        def cpuid(leaf, subleaf=0):
+            regs = (ctypes.c_uint32 * 4)()
+            fn(leaf, subleaf, regs)
+            return regs[0], regs[1], regs[2], regs[3]
+
+        return cpuid
+    except Exception:
+        kernel32.VirtualFree(addr, 0, 0x8000)
+        raise
 
 
-def get_os():
-    os_name = platform.system().lower()
-    if os_name == "windows":
-        return "windows"
-    if os_name == "darwin":
-        return "darwin"
-    return "linux"
+def _windows_has_avx2():
+    """Прямая аппаратная проверка AVX2: CPUID + XGETBV.
+    Не зависит от wmic/PowerShell и маркетингового имени CPU."""
+    cpuid = _windows_cpuid()
+    # Leaf 1: ECX bit 27 = OSXSAVE (ОС сохраняет расширенные регистры),
+    #         ECX bit 28 = AVX (процессор умеет AVX)
+    _, _, ecx, _ = cpuid(1)
+    if not (ecx & (1 << 27)) or not (ecx & (1 << 28)):
+        return False
+    # XCR0: биты 1 и 2 — ОС сохраняет состояние XMM и YMM
+    # xgetbv: читает XCR0, номер в RCX; результат в EDX:EAX
+    import ctypes
 
-
-def get_arch():
-    machine = platform.machine().lower()
-    if machine in ("x86_64", "amd64"):
-        return "amd64"
-    if machine in ("x86", "i386", "i686"):
-        return "386"
-    if machine in ("aarch64", "arm64"):
-        return "arm64"
-    return "amd64"
+    code = b"\x0f\x01\xd0\xc3"  # xgetbv; ret
+    kernel32 = ctypes.windll.kernel32
+    addr = kernel32.VirtualAlloc(None, len(code), 0x1000, 0x40)
+    if not addr:
+        return False
+    try:
+        ctypes.memmove(addr, code, len(code))
+        fn_type = ctypes.CFUNCTYPE(ctypes.c_uint64, ctypes.c_uint32)
+        xcr0 = fn_type(addr)(0)
+    finally:
+        kernel32.VirtualFree(addr, 0, 0x8000)
+    if (xcr0 & 0x6) != 0x6:
+        return False
+    # Leaf 7 subleaf 0: EBX bit 5 = AVX2
+    _, ebx7, _, _ = cpuid(7, 0)
+    return bool(ebx7 & (1 << 5))
 
 
 def check_avx2_support():
@@ -274,12 +383,11 @@ def check_avx2_support():
             with open("/proc/cpuinfo", "r") as f:
                 return "avx2" in f.read().lower()
         elif get_os() == "windows":
-            result = subprocess.run(
-                ["wmic", "cpu", "get", "name"],
-                capture_output=True, text=True, timeout=5
-            )
-            cpu_name = result.stdout.lower()
-            return not any(old in cpu_name for old in ["pentium", "celeron", "atom"])
+            try:
+                return _windows_has_avx2()
+            except Exception:
+                # Консервативный fallback: без AVX2 не подтверждён
+                return False
         elif get_os() == "darwin":
             return True
     except Exception:
@@ -308,8 +416,14 @@ def restart_as_admin():
             ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, params, None, 1)
             sys.exit(0)
         elif platform.system().lower() == "darwin":
-            args_str = " ".join(sys.argv)
-            subprocess.Popen(["osascript", "-e", f'do shell script "{sys.executable} {args_str}" with administrator privileges'])
+            shell_cmd = " ".join(
+                [shlex.quote(sys.executable)] + [shlex.quote(a) for a in sys.argv]
+            )
+            applescript_cmd = shell_cmd.replace("\\", "\\\\").replace('"', '\\"')
+            subprocess.Popen([
+                "osascript", "-e",
+                f'do shell script "{applescript_cmd}" with administrator privileges'
+            ])
             sys.exit(0)
         else:
             if shutil.which("sudo"):
@@ -355,27 +469,94 @@ def setup_console():
         mode = ctypes.c_ulong()
         if kernel32.GetConsoleMode(handle, ctypes.byref(mode)):
             kernel32.SetConsoleMode(handle, mode.value | 0x0004)
+
+        # Прячем мигающий текстовый курсор (иначе в углу TUI моргает "_")
+        class _CURSORINFO(ctypes.Structure):
+            _fields_ = [("dwSize", ctypes.c_ulong), ("bVisible", ctypes.c_bool)]
+
+        info = _CURSORINFO()
+        if kernel32.GetConsoleCursorInfo(handle, ctypes.byref(info)):
+            info.bVisible = False
+            kernel32.SetConsoleCursorInfo(handle, ctypes.byref(info))
     except Exception:
         pass
 
 
+# Диапазоны эмодзи/сервисных символов, вычищаемых на Windows
+# (классическая консоль их не рендерит — рисуются пустые квадраты).
+# Стрелки (2190-21FF) и геометрические фигуры (25A0-25FF) НЕ трогаем:
+# используются в разметке интерфейса (→, ■) и рисуются везде.
+_EMOJI_STRIP_RANGES = (
+    (0x1F000, 0x1FAFF),  # пиктограммы, флаги-индикаторы, 🅰️ и пр.
+    (0x2300, 0x23FF),    # misc technical: ⌚ ⌛ ⏰ ...
+    (0x2600, 0x26FF),    # misc symbols: ✅ ⚡ ⭐ ...
+    (0x2700, 0x27BF),    # dingbats: ✂ ✉ ...
+    (0x2B00, 0x2BFF),    # ⭐ ⬆ и пр.
+    (0xFE00, 0xFE0F),    # variation selectors
+    (0x200D, 0x200D),    # ZWJ
+    (0x20E3, 0x20E3),    # keycap
+)
+
+
 def replace_flag_emojis(text: str) -> str:
-    """На Windows заменяет эмодзи-флаги (пары региональных индикаторов)
-    на текстовые коды стран в квадратных скобках: в Windows нет глифов флагов."""
+    """На Windows: флаги (пары региональных индикаторов) заменяет на
+    текстовые коды стран вроде [CZ], остальные эмодзи вычищает —
+    классическая консоль Windows их не рендерит.
+    Устойчив к вариантному селектору FE0F между/после индикаторами."""
     if get_os() != "windows":
         return text
     out = []
     i = 0
     n = len(text)
+    VS = 0xFE0F
+
+    def _skip_vs(pos):
+        while pos < n and ord(text[pos]) == VS:
+            pos += 1
+        return pos
+
     while i < n:
         cp = ord(text[i])
-        if 0x1F1E6 <= cp <= 0x1F1FF and i + 1 < n:
-            cp2 = ord(text[i + 1])
-            if 0x1F1E6 <= cp2 <= 0x1F1FF:
-                code = chr(cp - 0x1F1E6 + 65) + chr(cp2 - 0x1F1E6 + 65)
-                out.append(f"[{code}]")
-                i += 2
-                continue
+        if 0x1F1E6 <= cp <= 0x1F1FF:
+            j = _skip_vs(i + 1)
+            if j < n:
+                cp2 = ord(text[j])
+                if 0x1F1E6 <= cp2 <= 0x1F1FF:
+                    code = chr(cp - 0x1F1E6 + 65) + chr(cp2 - 0x1F1E6 + 65)
+                    out.append(f"[{code}]")
+                    i = _skip_vs(j + 1)
+                    # Имя ноды часто дублирует флаг текстовым кодом:
+                    # "🇷🇺 RU >> 🇨🇭 CH" -> "[RU] >> [CH]", а не "[RU] RU >> [CH] CH".
+                    # Отбрасываем код только как отдельное слово (не часть "CZNET").
+                    if (
+                        i + 3 <= n
+                        and text[i] == " "
+                        and text[i + 1 : i + 3].upper() == code
+                        and (i + 3 == n or not text[i + 3].isalpha())
+                    ):
+                        i += 3
+                    continue
         out.append(text[i])
         i += 1
-    return "".join(out)
+
+    result = "".join(out)
+    return "".join(
+        ch for ch in result
+        if not any(lo <= ord(ch) <= hi for lo, hi in _EMOJI_STRIP_RANGES)
+    )
+
+
+def format_group_name(name: str, is_smart: bool = False) -> str:
+    """Windows: имя группы для селектора. Начальное эмодзи заменяется на
+    ☻ для авто/smart-групп и на ● для остальных; флаги → [XX].
+    Если эмодзи в имени нет — имя возвращается без изменений."""
+    if get_os() != "windows":
+        return name
+    stripped = replace_flag_emojis(name)
+    low = stripped.lstrip().lower()
+    auto = is_smart or low.startswith("авто") or low.startswith("auto")
+    icon = "☻" if auto else "●"
+    if stripped != name:
+        return f"{icon} {stripped.lstrip()}"
+    return name
+

@@ -2,6 +2,7 @@
 Работа с YAML конфигами
 """
 from ruamel.yaml import YAML
+
 from utils import CONFIG_CLEAN, CONFIG_SMART, get_os
 
 
@@ -9,6 +10,12 @@ def make_yaml():
     y = YAML()
     y.preserve_quotes = True
     y.width = 4096
+    # Элементы списков с отступом под ключом (стандартный стиль clash-конфигов):
+    #   fake-ip-filter:
+    #     - '+.kimi.ai'
+    # По умолчанию ruamel ставит '-' на уровне ключа — не валится парсер,
+    # но ломает читаемость и сбивает с толку diff'ы.
+    y.indent(mapping=2, sequence=4, offset=2)
     return y
 
 
@@ -51,33 +58,6 @@ def generate_smart_config():
                         del group["tolerance"]
 
         dump_config_rt(config, CONFIG_SMART)
-
-        # Постобработка: пустая строка после strategy: sticky-sessions
-        with open(CONFIG_SMART, "r", encoding="utf-8") as f:
-            lines = f.readlines()
-
-        cleaned = []
-        i = 0
-        while i < len(lines):
-            line = lines[i]
-            # Убираем пустую строку ПЕРЕД strategy:
-            if line.strip() == "" and i + 1 < len(lines):
-                if lines[i + 1].strip().startswith("strategy:"):
-                    i += 1
-                    continue
-            cleaned.append(line)
-            # Добавляем пустую строку ПОСЛЕ strategy: sticky-sessions
-            if "strategy: sticky-sessions" in line:
-                if i + 1 >= len(lines) or (
-                    lines[i + 1].strip() != ""
-                    and not lines[i + 1].strip().startswith("- name:")
-                ):
-                    cleaned.append("\n")
-            i += 1
-
-        with open(CONFIG_SMART, "w", encoding="utf-8") as f:
-            f.writelines(cleaned)
-
         return True
     except Exception:
         return False
@@ -111,3 +91,4 @@ def get_api_secret():
         return config.get("secret", "varekai")
     except Exception:
         return "varekai"
+
