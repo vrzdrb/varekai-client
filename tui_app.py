@@ -79,7 +79,8 @@ class _BoldText(Static):
         text = self._bold_text
         plain = text.plain if isinstance(text, Text) else str(text)
         # Квадратные скобки подписи экранируем, чтобы разметка не съела их
-        markup = f"[bold]{plain.replace('[', '\\[')}[/]"
+        escaped = plain.replace("[", "\\[")
+        markup = f"[bold]{escaped}[/]"
         self.query_one(".fb-a", Static).update(markup)
 
     def update_text(self, content) -> None:
