@@ -63,9 +63,10 @@ class _BoldText(Static):
     _BoldText .fb-a { width: auto; height: 1; }
     """
 
-    def __init__(self, content="", **kwargs):
+    def __init__(self, content="", color: str = "#1a1a1a", **kwargs):
         super().__init__(**kwargs)
         self._bold_text = content
+        self._color = color
 
     def compose(self) -> ComposeResult:
         yield Static("", classes="fb-spacer")
@@ -76,12 +77,12 @@ class _BoldText(Static):
         self._sync_bold_text()
 
     def _sync_bold_text(self) -> None:
+        # Text со встроенным стилем: жирность и цвет идут в содержимом
+        # (как в футере), а не через CSS виджета — не зависит ни от
+        # каскада, ни от разметки, скобки [ ] не нужно экранировать.
         text = self._bold_text
         plain = text.plain if isinstance(text, Text) else str(text)
-        # Квадратные скобки подписи экранируем, чтобы разметка не съела их
-        escaped = plain.replace("[", "\\[")
-        markup = f"[bold]{escaped}[/]"
-        self.query_one(".fb-a", Static).update(markup)
+        self.query_one(".fb-a", Static).update(Text(plain, style=f"bold {self._color}"))
 
     def update_text(self, content) -> None:
         self._bold_text = content
