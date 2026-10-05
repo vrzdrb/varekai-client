@@ -543,6 +543,45 @@ def _start_detached(cmd, log_path, script_dir):
             )
 
 
+def _mount_options(path):
+    """Опции монтирования ФС, на которой лежит файл (/proc/self/mounts).
+    Возвращает список опций самого глубокого подходящего mount-point."""
+    try:
+        target = str(Path(path).resolve())
+        best_opts = []
+        best_len = -1
+        with open("/proc/self/mounts", "r", encoding="utf-8") as f:
+            for line in f:
+                parts = line.split()
+                if len(parts) < 4:
+                    continue
+                mount_point = parts[1].replace("\\040", " ")
+                if target.startswith(mount_point) and len(mount_point) > best_len:
+                    best_opts = parts[3].split(",")
+                    best_len = len(mount_point)
+        return best_opts
+    except Exception:
+        return []
+
+
+def _tun_is_up():
+    """Поднялся ли TUN-интерфейс ядра. При невозможности проверить
+    считаем, что поднялся (не будем трогать рабочий экземпляр)."""
+    try:
+        r = subprocess.run(
+            ["ip", "-o", "link"], capture_output=True, text=True, timeout=5
+        )
+        for line in r.stdout.splitlines():
+            name = line.split(":", 2)[1].strip().split("@")[0].lower() if ":" in line else ""
+            # Интерфейсы mihomo называются tun*/utun* — startswith, чтобы
+            # не поймать ложное "veth_tun_ext".
+            if name.startswith("tun") or name.startswith("utun"):
+                return True
+    except Exception:
+        return True
+    return False
+
+
 def _ensure_core_capabilities(binary_path):
     """Разовая выдача CAP_NET_ADMIN бинарнику ядра: ядро сможет работать
     с TUN без root и писать в любые папки пользователя (в т.ч. тома
@@ -550,6 +589,10 @@ def _ensure_core_capabilities(binary_path):
     Требует поддержки xattr файловой системой; результат кэшируется
     маркером рядом с бинарником (повторяем после обновления ядра).
     Возвращает True, если capability гарантированно применены."""
+    # nosuid: ядро игнорирует file capabilities — setcap бессмысленен,
+    # а ядро молча останется без TUN. Сразу идём по пути root.
+    if "nosuid" in _mount_options(binary_path):
+        return False
     try:
         r = subprocess.run(
             ["getcap", str(binary_path)], capture_output=True, text=True, timeout=5
@@ -666,13 +709,22 @@ def start_vpn():
             _start_detached(base_cmd, log_path, script_dir)
 
         pid = _wait_pid()
-        if not pid and used_caps:
-            # Capability-запуск не взлетел (например, nosuid-том игнорирует
-            # file capabilities) — последний шанс: классический запуск от root.
-            cmd = _linux_elevated_cmd(base_cmd, script_dir)
-            if cmd is not None:
-                _start_detached(cmd, log_path, script_dir)
-                pid = _wait_pid()
+        if used_caps:
+            if pid and not _tun_is_up():
+                # Ядро живо, но TUN не поднялся (caps проигнорированы,
+                # интерфейс занят и т.п.) — такой экземпляр бесполезен:
+                # гасим и поднимаем классически, от root.
+                try:
+                    subprocess.run(["pkill", "-x", CORE_BINARY], capture_output=True)
+                    time.sleep(1)
+                except Exception:
+                    pass
+                pid = None
+            if not pid:
+                cmd = _linux_elevated_cmd(base_cmd, script_dir)
+                if cmd is not None:
+                    _start_detached(cmd, log_path, script_dir)
+                    pid = _wait_pid()
         if pid:
             return True, t("vpn_start_ok")
         return False, f"{t('vpn_start_fail')}: {t('log_core')}"
