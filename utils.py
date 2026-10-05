@@ -100,8 +100,8 @@ STRINGS = {
         "quit_dialog_yes": "Да",
         "quit_dialog_no": "Нет",
         "status_stopped": "VPN: ОСТАНОВЛЕН",
-        "btn_toggle_on": "ЗАПУСТИТЬ VPN",
-        "btn_toggle_off": "ОСТАНОВИТЬ VPN",
+        "btn_toggle_on": "Запустить VPN",
+        "btn_toggle_off": "Остановить VPN",
         "btn_update_run": "Обновить и запустить",
         "btn_logs": "Логи",
         "brief_starting": "Запуск VPN...",
@@ -206,8 +206,8 @@ STRINGS = {
         "quit_dialog_yes": "Yes",
         "quit_dialog_no": "No",
         "status_stopped": "VPN: STOPPED",
-        "btn_toggle_on": "START VPN",
-        "btn_toggle_off": "STOP VPN",
+        "btn_toggle_on": "Start VPN",
+        "btn_toggle_off": "Stop VPN",
         "btn_update_run": "Update & Start",
         "btn_logs": "Logs",
         "brief_starting": "Starting VPN...",
@@ -584,14 +584,23 @@ def replace_flag_emojis(text: str) -> str:
                     i = _skip_vs(j + 1)
                     # Имя ноды часто дублирует флаг текстовым кодом:
                     # "🇷🇺 RU >> 🇨🇭 CH" -> "[RU] >> [CH]", а не "[RU] RU >> [CH] CH".
-                    # Отбрасываем код только как отдельное слово (не часть "CZNET").
+                    # Код может не совпадать с флагом из-за опечаток в конфиге
+                    # ("🇩🇪 GE" — флаг Германии, код Грузии): отбрасываем
+                    # первое отдельное слово из двух латинских букв
+                    # (обе заглавные или обе строчные), побеждает флаг.
+                    # "My"/"CZNET"/кириллица не трогаются.
                     if (
                         i + 3 <= n
                         and text[i] == " "
-                        and text[i + 1 : i + 3].upper() == code
                         and (i + 3 == n or not text[i + 3].isalpha())
                     ):
-                        i += 3
+                        word = text[i + 1 : i + 3]
+                        if (
+                            word.isascii()
+                            and word.isalpha()
+                            and (word.isupper() or word.islower())
+                        ):
+                            i += 3
                     continue
         out.append(text[i])
         i += 1
@@ -603,17 +612,20 @@ def replace_flag_emojis(text: str) -> str:
     )
 
 
-def format_group_name(name: str, is_smart: bool = False) -> str:
+def format_group_name(name: str, is_smart: bool = False, force_icon: str = "") -> str:
     """Windows: имя группы для селектора. Начальное эмодзи заменяется на
     ☻ для авто/smart-групп и на ● для остальных; флаги → [XX].
-    Если эмодзи в имени нет — имя возвращается без изменений."""
+    Если эмодзи в имени нет — имя возвращается без изменений.
+    force_icon: иконка принудительно, даже без эмодзи (таблица нод)."""
     if get_os() != "windows":
         return name
     stripped = replace_flag_emojis(name)
     low = stripped.lstrip().lower()
     auto = is_smart or low.startswith("авто") or low.startswith("auto")
-    icon = "☻" if auto else "●"
+    icon = force_icon or ("☻" if auto else "●")
     if stripped != name:
         return f"{icon} {stripped.lstrip()}"
+    if force_icon:
+        return f"{icon} {name}"
     return name
 

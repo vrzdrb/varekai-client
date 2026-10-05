@@ -88,10 +88,24 @@ jobs:
           printf '#!/bin/bash\ncd "$(dirname "$0")"\n./Varekai\n' > START.command
           chmod +x START.command
 
+      - name: Embed version into build
+        shell: bash
+        run: |
+          python - <<'EOF'
+          import pathlib
+          import re
+          text = pathlib.Path("pyproject.toml").read_text(encoding="utf-8")
+          version = re.search(r'^version\s*=\s*"([^"]+)"', text, re.M).group(1)
+          pathlib.Path("_build_version.py").write_text(
+              f'BUILD_VERSION = "{version}"\n', encoding="utf-8"
+          )
+          print("Embedded version:", version)
+          EOF
+
       - name: Build with PyInstaller
         shell: bash
         run: |
-          pyinstaller --onedir --name varekai-client main.py
+          pyinstaller --onedir --name varekai-client --hidden-import _build_version --icon app.ico main.py
           if [ "${{ matrix.platform }}" = "windows" ]; then
             mv dist/varekai-client/varekai-client.exe dist/varekai-client/START.exe
           else
@@ -155,3 +169,4 @@ jobs:
           body: ${{ inputs.notes }}
           draft: true
           files: artifacts/*
+

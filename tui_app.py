@@ -47,6 +47,63 @@ from utils import (
 AUTO_RESET = "__AUTO_RESET__"
 NO_CONN = "__NO_CONN__"
 
+class _BoldText(Static):
+    """Текст с гарантированно жирным начертанием. Жирность задаётся
+    разметкой содержимого ([bold]...[/]), а не text-style из CSS:
+    на Windows-консолях Textual сохраняет inline-стили содержимого,
+    но теряет жирность base-стиля виджета (как у футера и лога — единый
+    механизм для всех платформ, один проход отрисовки)."""
+
+    DEFAULT_CSS = """
+    _BoldText {
+        layout: horizontal;
+        align: center middle;
+    }
+    _BoldText .fb-spacer { width: 1fr; height: 1; }
+    _BoldText .fb-a { width: auto; height: 1; }
+    """
+
+    def __init__(self, content="", **kwargs):
+        super().__init__(**kwargs)
+        self._bold_text = content
+
+    def compose(self) -> ComposeResult:
+        yield Static("", classes="fb-spacer")
+        yield Static("", classes="fb-a")
+        yield Static("", classes="fb-spacer")
+
+    def on_mount(self) -> None:
+        self._sync_bold_text()
+
+    def _sync_bold_text(self) -> None:
+        text = self._bold_text
+        plain = text.plain if isinstance(text, Text) else str(text)
+        # Квадратные скобки подписи экранируем, чтобы разметка не съела их
+        markup = f"[bold]{plain.replace('[', '\\[')}[/]"
+        self.query_one(".fb-a", Static).update(markup)
+
+    def update_text(self, content) -> None:
+        self._bold_text = content
+        try:
+            self._sync_bold_text()
+        except Exception:
+            pass
+
+
+class BoldLabel(_BoldText):
+    """Однострочная подпись с гарантированно жирным текстом."""
+
+
+class FlatButton(_BoldText):
+    """Кнопка на базе Static с гарантированно жирной подписью. Клик шлёт
+    стандартное Button.Pressed — обработчики экрана работают без изменений."""
+
+    def on_click(self) -> None:
+        if self.disabled:
+            return
+        self.post_message(Button.Pressed(self))
+
+
 class QuitScreen(ModalScreen):
     """Подтверждение выхода при работающем VPN: Да — выйти, оставив VPN;
     Нет — остановить VPN и выйти; Esc — отмена."""
@@ -86,9 +143,9 @@ class QuitScreen(ModalScreen):
         with Container(classes="quit-panel"):
             yield Static(t("quit_dialog_msg"), classes="quit-text")
             with Horizontal(classes="quit-row"):
-                yield Button(t("quit_dialog_yes"), id="quit_yes", classes="quit-btn")
+                yield FlatButton(t("quit_dialog_yes"), id="quit_yes", classes="quit-btn")
                 yield Static("", classes="quit-sep")
-                yield Button(t("quit_dialog_no"), id="quit_no", classes="quit-btn")
+                yield FlatButton(t("quit_dialog_no"), id="quit_no", classes="quit-btn")
 
     def action_cancel(self) -> None:
         self.dismiss(None)
@@ -306,11 +363,14 @@ class VarekaiApp(App):
         return f" {t('lang_current_name')}"
 
     @staticmethod
-    def _btn_caption(plain: str, icon: str) -> Text:
+    def _btn_caption(plain: str, icon: str, frame: str = "[]") -> Text:
         """Подпись жёлтой кнопки. Windows-консоль рендерит эмодзи
         квадратами и ест '[...]' как разметку — там текст в скобках,
         обёрнутый в Text (без Rich-разметки)."""
-        label = f"[{plain}]" if get_os() == "windows" else f"{icon} {plain}"
+        if get_os() == "windows":
+            label = f">> {plain} <<" if frame == ">>" else f"[{plain}]"
+        else:
+            label = f"{icon} {plain}"
         return Text(label)
 
     def _toggle_caption(self) -> Text:
@@ -337,25 +397,25 @@ class VarekaiApp(App):
         yield Static(f"varekai {APP_VERSION}", id="app_header")
         with Horizontal():
             with Container(classes="panel left-panel"):
-                yield Static(id="status_label")
+                yield BoldLabel(id="status_label")
                 yield Static(id="info_label")
                 with Horizontal(classes="btn-row"):
-                    yield Button(
-                        self._btn_caption(t("btn_update_run"), "\U0001F504"),
+                    yield FlatButton(
+                        self._btn_caption(t("btn_update_run"), "\U0001F504", frame=">>"),
                         id="btn_update_run", classes="btn-action",
                     )
                     yield Static("", classes="btn-sep")
-                    yield Button(
+                    yield FlatButton(
                         self._btn_caption(t("btn_toggle_on"), "\u00bb"),
                         id="btn_toggle", classes="btn-action",
                     )
                 with Horizontal(classes="lang-row"):
-                    yield Button(
+                    yield FlatButton(
                         self._btn_caption(t("btn_logs"), "\U0001F4DC"),
                         id="btn_logs", classes="btn-lang",
                     )
                     yield Static("", classes="btn-sep")
-                    yield Button(self._conn_label(), id="btn_conn", classes="btn-lang")
+                    yield FlatButton(self._conn_label(), id="btn_conn", classes="btn-lang")
                 yield Static(t("log_app"), id="log_title")
                 with Container(id="log_frame"):
                     yield RichLog(id="brief_log", max_lines=1000, wrap=True, markup=True)
@@ -396,19 +456,19 @@ class VarekaiApp(App):
 
     def update_status(self):
         pid = get_core_pid()
-        status_label = self.query_one("#status_label", Static)
-        btn_toggle = self.query_one("#btn_toggle", Button)
+        status_label = self.query_one("#status_label", BoldLabel)
+        btn_toggle = self.query_one("#btn_toggle", FlatButton)
         status_label.remove_class("status-on", "status-off")
         if pid:
             status_label.add_class("status-on")
-            status_label.update(t("status_running"))
+            status_label.update_text(t("status_running"))
             self.vpn_running = True
-            btn_toggle.label = self._toggle_caption()
+            btn_toggle.update_text(self._toggle_caption())
         else:
             status_label.add_class("status-off")
-            status_label.update(t("status_stopped"))
+            status_label.update_text(t("status_stopped"))
             self.vpn_running = False
-            btn_toggle.label = self._toggle_caption()
+            btn_toggle.update_text(self._toggle_caption())
         self.update_info_line()
 
     def update_info_line(self):
@@ -456,13 +516,13 @@ class VarekaiApp(App):
         """Мгновенная реакция UI + запуск рабочего потока.
         Без этого экран не менялся все секунды, пока ядро стартует,
         а при исключении в воркере оставался рассинхронизированным."""
-        btn_toggle = self.query_one("#btn_toggle", Button)
+        btn_toggle = self.query_one("#btn_toggle", FlatButton)
         if btn_toggle.disabled:
             return  # операция уже выполняется
         btn_toggle.disabled = True
         starting = not self.vpn_running
         message = t("brief_starting") if starting else t("brief_stopping")
-        self.query_one("#status_label", Static).update(message)
+        self.query_one("#status_label", BoldLabel).update_text(message)
         self.brief_log(message)
         self.run_worker(self._worker_toggle, thread=True)
 
@@ -569,7 +629,7 @@ class VarekaiApp(App):
         finally:
             def _finish() -> None:
                 try:
-                    self.query_one("#btn_toggle", Button).disabled = False
+                    self.query_one("#btn_toggle", FlatButton).disabled = False
                     self.update_status()
                     self.refresh()
                 except Exception:
@@ -686,14 +746,14 @@ class VarekaiApp(App):
             self.run_worker(self._select_node(self._node_order[ctrl.index]))
 
     def _update_ui_texts(self):
-        self.query_one("#btn_update_run", Button).label = self._btn_caption(
-            t("btn_update_run"), "\U0001F504"
+        self.query_one("#btn_update_run", FlatButton).update_text(
+            self._btn_caption(t("btn_update_run"), "\U0001F504", frame=">>")
         )
-        btn_toggle = self.query_one("#btn_toggle", Button)
+        btn_toggle = self.query_one("#btn_toggle", FlatButton)
         btn_toggle.label = self._toggle_caption()
-        self.query_one("#btn_conn", Button).label = self._conn_label()
-        self.query_one("#btn_logs", Button).label = self._btn_caption(
-            t("btn_logs"), "\U0001F4DC"
+        self.query_one("#btn_conn", FlatButton).update_text(self._conn_label())
+        self.query_one("#btn_logs", FlatButton).update_text(
+            self._btn_caption(t("btn_logs"), "\U0001F4DC")
         )
         self.query_one("#label_group", Label).update(t("label_group"))
         self.query_one("#hdr_node_name", Static).update(t("col_node"))
@@ -747,10 +807,12 @@ class VarekaiApp(App):
                     dv = hist[-1].get("delay", 0)
                     delay = f"{dv}ms" if dv > 0 else "N/A"
                 alive = t("status_alive") if nd.get("alive", True) else t("status_dead")
-                # format_group_name: у подгрупп (Автовыбор и т.п.) в таблице
-                # та же иконка ☻/●, что и в выпадающем списке групп
+                # force_icon="●": в таблице нод единый кружочек у всех
+                # строк (подгруппы вроде Автовыбор — тоже ●; ☻ остаётся
+                # только в выпадающем списке групп)
                 display = format_group_name(
-                    node_name, str(nd.get("type", "")).lower() == "smart"
+                    node_name, str(nd.get("type", "")).lower() == "smart",
+                    force_icon="●",
                 )
                 rows.append((node_name, display, delay, alive, node_name == now))
 
@@ -839,7 +901,10 @@ class VarekaiApp(App):
             for g in ordered:
                 gdata = proxies.get(g, {})
                 now = gdata.get("now", "")
-                g_disp = format_group_name(g, str(gdata.get("type", "")).lower() == "smart")
+                g_disp = format_group_name(
+                    g, str(gdata.get("type", "")).lower() == "smart",
+                    force_icon="●",
+                )
                 # Экранируем '[' — опции Select рендерятся через разметку
                 # и [RU] из замены флагов съедался бы как тег.
                 label = (f"{g_disp}  →  {replace_flag_emojis(now)}" if now else g_disp)
