@@ -631,7 +631,10 @@ def start_vpn():
             log_path.unlink()
         log_path.touch()
 
-        base_cmd = [str(binary_path), "-f", str(config_path)]
+        # -d задаёт домашнюю директорию ядра: все относительные пути
+        # (rule-providers ./unified, external-ui) разрешаются от папки
+        # приложения, а не от ~/.config/mihomo или /root.
+        base_cmd = [str(binary_path), "-d", str(script_dir), "-f", str(config_path)]
 
         def _wait_pid():
             deadline = time.time() + 30

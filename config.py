@@ -45,6 +45,11 @@ def generate_smart_config():
             if isinstance(tun, dict):
                 tun["strict-route"] = False
 
+        # Локальный дашборд из подписки не нужен: без external-ui-url
+        # ядро не будет качать zashboard и подобные UI при каждом старте.
+        for key in ("external-ui", "external-ui-name", "external-ui-url"):
+            config.pop(key, None)
+
         # Смарт-стратегии ВСЕГДА включены
         if "proxy-groups" in config and isinstance(config["proxy-groups"], list):
             for group in config["proxy-groups"]:
