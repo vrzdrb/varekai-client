@@ -1,11 +1,9 @@
 """
 Работа с YAML конфигами
 """
-import re
-
 from ruamel.yaml import YAML
 
-from utils import CONFIG_CLEAN, CONFIG_SMART, get_os, get_script_dir
+from utils import CONFIG_CLEAN, CONFIG_SMART, get_os
 
 
 def make_yaml():
@@ -46,23 +44,6 @@ def generate_smart_config():
             tun = config.get("tun")
             if isinstance(tun, dict):
                 tun["strict-route"] = False
-
-        # Абсолютные пути rule-providers: ядро под Linux стартует через
-        # pkexec от root, и его рабочий каталог становится /root — относительные
-        # "./unified/..." оседали в /root/unified вместо папки приложения.
-        providers = config.get("rule-providers")
-        if isinstance(providers, dict):
-            app_dir = get_script_dir()
-            for pdata in providers.values():
-                if not isinstance(pdata, dict):
-                    continue
-                raw = str(pdata.get("path") or "")
-                # Абсолютные пути пропускаем: ведущий '/' (Linux/macOS)
-                # или буква диска 'C:\' / 'C:/' (Windows)
-                is_absolute = raw.startswith("/") or re.match(r"^[A-Za-z]:[\\/]", raw)
-                if raw and not is_absolute:
-                    rel = raw[2:] if raw.startswith("./") else raw
-                    pdata["path"] = str(app_dir / rel)
 
         # Смарт-стратегии ВСЕГДА включены
         if "proxy-groups" in config and isinstance(config["proxy-groups"], list):

@@ -4,6 +4,7 @@
 import gzip
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -542,13 +543,73 @@ def _start_detached(cmd, log_path, script_dir):
             )
 
 
-def _linux_elevated_cmd(base_cmd):
-    """pkexec предпочтительнее, sudo — fallback."""
+def _ensure_core_capabilities(binary_path):
+    """Разовая выдача CAP_NET_ADMIN бинарнику ядра: ядро сможет работать
+    с TUN без root и писать в любые папки пользователя (в т.ч. тома
+    VeraCrypt, куда root через pkexec может не иметь доступа).
+    Требует поддержки xattr файловой системой; результат кэшируется
+    маркером рядом с бинарником (повторяем после обновления ядра).
+    Возвращает True, если capability гарантированно применены."""
+    try:
+        r = subprocess.run(
+            ["getcap", str(binary_path)], capture_output=True, text=True, timeout=5
+        )
+        if "cap_net_admin" in r.stdout:
+            return True
+    except Exception:
+        return False
+
+    marker = binary_path.parent / ".varekai-no-setcap"
+    try:
+        mtime = str(int(binary_path.stat().st_mtime))
+        if marker.exists() and marker.read_text(encoding="utf-8").strip() == mtime:
+            return False  # уже известно: FS не поддерживает, бинарник не менялся
+    except Exception:
+        pass
+
+    try:
+        if shutil.which("pkexec"):
+            elev = ["pkexec"]
+        elif shutil.which("sudo"):
+            elev = ["sudo", "-E"]
+        else:
+            return False
+        r = subprocess.run(
+            elev + ["setcap", "cap_net_admin,cap_net_bind_service=+ep", str(binary_path)],
+            capture_output=True, timeout=60,
+        )
+        r2 = subprocess.run(
+            ["getcap", str(binary_path)], capture_output=True, text=True, timeout=5
+        )
+        if r.returncode == 0 and "cap_net_admin" in r2.stdout:
+            marker.unlink(missing_ok=True)
+            return True
+        # FS не хранит xattr (FAT/exFAT, часть FUSE) — не дёргаем pkexec каждый раз
+        marker.write_text(mtime, encoding="utf-8")
+        return False
+    except Exception:
+        return False
+
+
+def _linux_elevated_cmd(base_cmd, script_dir=None):
+    """pkexec предпочтительнее, sudo — fallback.
+
+    Для долгоживущих команд (ядро) добавляем явный cd: pkexec при старте
+    от root сбрасывает рабочий каталог, и относительные пути rule-providers
+    (./unified/...) оседали в /root/unified вместо папки приложения."""
     if shutil.which("pkexec"):
-        return ["pkexec"] + base_cmd
-    if shutil.which("sudo"):
-        return ["sudo", "-E"] + base_cmd
-    return None
+        elev = ["pkexec"]
+    elif shutil.which("sudo"):
+        elev = ["sudo", "-E"]
+    else:
+        return None
+    if script_dir is None:
+        return elev + list(base_cmd)
+    inner = (
+        "cd " + shlex.quote(str(script_dir))
+        + " && exec " + " ".join(shlex.quote(str(part)) for part in base_cmd)
+    )
+    return elev + ["bash", "-c", inner]
 
 
 def start_vpn():
@@ -571,26 +632,44 @@ def start_vpn():
         log_path.touch()
 
         base_cmd = [str(binary_path), "-f", str(config_path)]
+
+        def _wait_pid():
+            deadline = time.time() + 30
+            while time.time() < deadline:
+                pid = get_core_pid()
+                if pid:
+                    return pid
+                if core_process is not None and core_process.poll() is not None:
+                    break
+                time.sleep(0.5)
+            return None
+
+        used_caps = False
         if not is_admin():
             if get_os() == "linux":
-                cmd = _linux_elevated_cmd(base_cmd)
-                if cmd is None:
-                    return False, t("elev_no_mech")
-                _start_detached(cmd, log_path, script_dir)
+                # Вариант 1: ядро от пользователя с CAP_NET_ADMIN — без root,
+                # пишет куда угодно (включая тома VeraCrypt).
+                if _ensure_core_capabilities(binary_path):
+                    used_caps = True
+                    _start_detached(base_cmd, log_path, script_dir)
+                else:
+                    cmd = _linux_elevated_cmd(base_cmd, script_dir)
+                    if cmd is None:
+                        return False, t("elev_no_mech")
+                    _start_detached(cmd, log_path, script_dir)
             else:
                 return False, t("admin_required")
         else:
             _start_detached(base_cmd, log_path, script_dir)
 
-        pid = None
-        deadline = time.time() + 30
-        while time.time() < deadline:
-            pid = get_core_pid()
-            if pid:
-                break
-            if core_process is not None and core_process.poll() is not None:
-                break
-            time.sleep(0.5)
+        pid = _wait_pid()
+        if not pid and used_caps:
+            # Capability-запуск не взлетел (например, nosuid-том игнорирует
+            # file capabilities) — последний шанс: классический запуск от root.
+            cmd = _linux_elevated_cmd(base_cmd, script_dir)
+            if cmd is not None:
+                _start_detached(cmd, log_path, script_dir)
+                pid = _wait_pid()
         if pid:
             return True, t("vpn_start_ok")
         return False, f"{t('vpn_start_fail')}: {t('log_core')}"
