@@ -204,6 +204,10 @@ class VarekaiApp(App):
     }
     #status_label.status-on  { background: #34C421; }
     #status_label.status-off { background: #F50A0A; }
+    /* Дочерний Static _BoldText ловит глобальное Static{color:#e0e0e0}
+       по типу, а не по наследованию — чёрный задаём явно */
+    #status_label .fb-a { color: #1a1a1a; }
+    .btn-action .fb-a, .btn-lang .fb-a, .quit-btn .fb-a { color: #1a1a1a; }
 
     #info_label { width: 100%; text-align: center; margin: 0 0 1 0; }
 
