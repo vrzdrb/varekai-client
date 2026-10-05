@@ -1,9 +1,9 @@
 """
 Работа с YAML конфигами
 """
-from ruamel.yaml import YAML
-
 import re
+
+from ruamel.yaml import YAML
 
 from utils import CONFIG_CLEAN, CONFIG_SMART, get_os, get_script_dir
 
