@@ -39,6 +39,21 @@ class ClashAPI:
         except Exception:
             return False
 
+    async def group_delay(self, group_name, timeout_ms=3000, url="http://www.gstatic.com/generate_204"):
+        """Тест задержек узлов группы. Возвращает {node: delay}.
+        Используем для определения активной ноды smart-групп, у которых
+        ядро не отдаёт now через /proxies."""
+        try:
+            r = await self._client.get(
+                f"{self.base_url}/group/{quote(group_name, safe='')}/delay",
+                params={"timeout": str(timeout_ms), "url": url},
+            )
+            if r.status_code == 200:
+                return r.json() or {}
+        except Exception:
+            pass
+        return {}
+
     async def get_connections(self):
         try:
             r = await self._client.get(f"{self.base_url}/connections")
@@ -63,3 +78,4 @@ class ClashAPI:
             return r.status_code in (200, 204)
         except Exception:
             return False
+

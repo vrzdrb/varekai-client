@@ -537,10 +537,16 @@ def _start_detached(cmd, log_path, script_dir):
                 | subprocess.CREATE_NEW_PROCESS_GROUP
             )
         else:
-            core_process = subprocess.Popen(
-                cmd, stdout=core_log, stderr=core_log, cwd=str(script_dir),
-                start_new_session=True
-            )
+            # umask 0: файлы, которые ядро создаст от root (провайдеры
+            # правил), останутся доступны пользователю на чтение/запись.
+            old_umask = os.umask(0o000)
+            try:
+                core_process = subprocess.Popen(
+                    cmd, stdout=core_log, stderr=core_log, cwd=str(script_dir),
+                    start_new_session=True
+                )
+            finally:
+                os.umask(old_umask)
 
 
 def _mount_options(path):
@@ -673,6 +679,18 @@ def start_vpn():
         if log_path.exists():
             log_path.unlink()
         log_path.touch()
+
+        # Предсоздаём то, что ядро положит рядом: оно может работать от
+        # root, и без этого файлы остались бы недоступны пользователю.
+        try:
+            unified_dir = script_dir / "unified"
+            unified_dir.mkdir(exist_ok=True)
+            os.chmod(unified_dir, 0o777)
+            cache_path = script_dir / "cache.db"
+            if not cache_path.exists():
+                cache_path.touch(mode=0o666)
+        except Exception:
+            pass
 
         # -d задаёт домашнюю директорию ядра: все относительные пути
         # (rule-providers ./unified, external-ui) разрешаются от папки

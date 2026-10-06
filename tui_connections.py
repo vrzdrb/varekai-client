@@ -111,6 +111,7 @@ class ConnectionsScreen(ModalScreen):
         self._empty = None
         self._proxy_now = None
         self._proxies_cache = {}
+        self._delay_cache = {}
         self._sort_column = None
         self._sort_reverse = False
 
@@ -264,35 +265,61 @@ class ConnectionsScreen(ModalScreen):
         host = str(meta.get("host") or meta.get("destinationIP") or "")
         return (rule, host)
 
-    def _resolve_node_name(self, name: str) -> str:
-        """Если name — группа, чей текущий выбор ссылается на другую группу
-        (Epic Games -> Автовыбор -> ...), спускаемся до конкретной ноды.
+    async def _group_best_node(self, name: str):
+        """Активная нода группы по тесту задержек — как дашборды
+        (clash-verge/mihomo-party). Нужна для smart-групп, у которых
+        ядро не отдаёт now через /proxies. Кэш 5 с, чтобы не дёргать API
+        на каждый тик обновления окна."""
+        key = str(name)
+        ts, hit = self._delay_cache.get(key, (0.0, None))
+        if hit is not None and time.monotonic() - ts < 5.0:
+            return hit
+        best = None
+        try:
+            delays = await self.api.group_delay(key, timeout_ms=3000)
+            alive = {k: v for k, v in delays.items() if isinstance(v, (int, float)) and v > 0}
+            if alive:
+                best = min(alive, key=alive.get)
+        except Exception:
+            pass
+        self._delay_cache[key] = (time.monotonic(), best)
+        return best
+
+    async def _resolve_chain(self, name: str) -> list:
+        """Цепочка выбора: PROXY -> подгруппа (Smart/Автовыбор) -> нода.
         Реальные ноды в /proxies не имеют поля now — цикл остановится сам,
-        множество seen страхует от кольцевых настроек."""
+        множество seen страхует от кольцевых настроек. Для групп без now
+        (smart в некоторых сборках ядра) ноду определяем тестом задержек."""
+        chain = []
         seen = set()
+        name = str(name)
         while name in self._proxies_cache and name not in seen:
             seen.add(name)
-            data = self._proxies_cache.get(name) or {}
-            now = data.get("now")
+            chain.append(name)
+            now = (self._proxies_cache.get(name) or {}).get("now")
             if not now or now == name:
+                # smart-группа без now — активную ноду узнаём по задержкам
+                if (self._proxies_cache.get(name) or {}).get("all"):
+                    best = await self._group_best_node(name)
+                    if best and best != name:
+                        chain.append(best)
                 break
             name = str(now)
-        return str(name)
+        return chain
 
-    def _resolve_server(self, c) -> str:
+    async def _resolve_server(self, c) -> str:
         chains = c.get("chains") or []
         if not chains:
             return "DIRECT"
         last = str(chains[-1])
         if last == "PROXY" and self._proxy_now:
-            resolved = self._resolve_node_name(str(self._proxy_now))
-            return f"PROXY {replace_flag_emojis(resolved)}"
-        # Последнее звено — группа: показываем её имя и конечную ноду
-        # (подгруппы вроде Автовыбор прозрачно проскакиваются резолвером).
-        if (self._proxies_cache.get(last) or {}).get("now"):
-            group = replace_flag_emojis(last).strip()
-            resolved = replace_flag_emojis(self._resolve_node_name(last))
-            return f"{group} → {resolved}"
+            # Цепочка выбора главной группы. Слово PROXY не показываем:
+            # если не DIRECT — и так понятно, что трафик идёт в прокси.
+            parts = await self._resolve_chain(self._proxy_now)
+            return replace_flag_emojis(" → ".join(parts)) if parts else "PROXY"
+        if (self._proxies_cache.get(last) or {}).get("now") or (self._proxies_cache.get(last) or {}).get("all"):
+            # Последнее звено — группа: показываем всю цепочку выбора.
+            return replace_flag_emojis(" → ".join(await self._resolve_chain(last)))
         return replace_flag_emojis(last)
 
     async def refresh_connections(self) -> None:
@@ -342,7 +369,7 @@ class ConnectionsScreen(ModalScreen):
                 rule_txt = payload if payload else "RuleSet"
             else:
                 rule_txt = f"{rule} ({payload})" if (rule and payload) else (rule or payload or "—")
-            server = self._resolve_server(c)
+            server = await self._resolve_server(c)
             dl = c.get("download", 0) or 0
             ul = c.get("upload", 0) or 0
             prev = self._prev.get(cid)

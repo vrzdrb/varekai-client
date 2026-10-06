@@ -339,8 +339,8 @@ class VarekaiApp(App):
     Static { color: #e0e0e0; text-style: bold; }
 
     .col-domain { width: 1fr; min-width: 8; text-align: left; }
-    .col-sport { width: 10; min-width: 0; text-align: right; }
-    .col-dport { width: 10; min-width: 0; text-align: right; }
+    .col-sport { width: 5; min-width: 0; text-align: right; }
+    .col-dport { width: 5; min-width: 0; text-align: right; }
     .col-server { width: 25; min-width: 0; text-align: left; }
     .col-rule   { width: 36; min-width: 0; text-align: left; }
     .col-ds     { width: 8;  min-width: 0; text-align: right; }
