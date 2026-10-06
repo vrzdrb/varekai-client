@@ -311,6 +311,9 @@ class VarekaiApp(App):
         background: #5a4280;
     }
     .node-header Static { color: #ffffff; text-style: bold; text-align: center; }
+    /* «Задержка» — кликабельная кнопка теста пинга, стиль как у кнопок */
+    #hdr_node_delay { background: #F0C60A; color: #1a1a1a; }
+    #hdr_node_delay:hover { background: #f5d020; }
     .node-header .node-name { width: 1fr; }
     .node-header .node-delay { width: 10; }
     .node-header .node-status { width: 10; }
@@ -746,10 +749,32 @@ class VarekaiApp(App):
         if isinstance(self.screen, (ConnectionsScreen, RollbackScreen)):
             return
         ctrl = event.control
+        if isinstance(ctrl, Static) and ctrl.id == "hdr_node_delay":
+            self.run_worker(self._test_group_delay())
+            return
         while ctrl is not None and not isinstance(ctrl, NodeRow):
             ctrl = getattr(ctrl, "parent", None)
         if isinstance(ctrl, NodeRow) and 0 <= ctrl.index < len(self._node_order):
             self.run_worker(self._select_node(self._node_order[ctrl.index]))
+
+    async def _test_group_delay(self) -> None:
+        """Проверка пинга узлов текущей группы по клику на заголовок
+        «Задержка» (как в clash-verge-rev). Ядро обновляет history узлов,
+        поэтому после теста просто перечитываем список."""
+        group = self.current_group
+        if not group:
+            return
+        self.brief_log(t("delay_testing", group=replace_flag_emojis(group)))
+        delays = await self.api.group_delay(group, timeout_ms=5000)
+        if not delays:
+            self.brief_log(t("delay_test_fail"))
+            return
+        ok = sum(1 for v in delays.values() if isinstance(v, (int, float)) and v > 0)
+        self.brief_log(t("delay_test_done", ok=ok, total=len(delays)))
+        self._nodes_sig = None
+        proxies = await self.api.get_proxies()
+        if proxies:
+            await self._refresh_nodes(proxies)
 
     def _update_ui_texts(self):
         self.query_one("#btn_update_run", FlatButton).update_text(

@@ -19,6 +19,7 @@ ASN.mmdb
 country.mmdb
 geoip.dat
 geosite.dat
+.varekai-no-setcap
 
 # === Скачанное и генерируемое ===
 archives/

@@ -44,9 +44,12 @@ class ClashAPI:
         Используем для определения активной ноды smart-групп, у которых
         ядро не отдаёт now через /proxies."""
         try:
+            # Тест группы гоняет узлы последовательно и идёт секундами —
+            # дефолтный клиентский таймаут 2 с здесь неприменим.
             r = await self._client.get(
                 f"{self.base_url}/group/{quote(group_name, safe='')}/delay",
                 params={"timeout": str(timeout_ms), "url": url},
+                timeout=30.0,
             )
             if r.status_code == 200:
                 return r.json() or {}
