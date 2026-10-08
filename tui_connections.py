@@ -1,6 +1,7 @@
 """
 Модальное окно активных подключений.
 """
+import asyncio
 import time
 
 from rich.text import Text
@@ -12,7 +13,7 @@ from textual.widgets import Static
 
 from clash_api import ClashAPI
 from tui_widgets import ConnectionRow, fmt_bytes, fmt_speed
-from utils import replace_flag_emojis, t
+from utils import get_os, replace_flag_emojis, t
 
 CONN_POLL_INTERVAL = 0.2  # 5 раз в секунду
 
@@ -120,6 +121,7 @@ class ConnectionsScreen(ModalScreen):
         self._proxy_now = None
         self._proxies_cache = {}
         self._delay_cache = {}
+        self._refresh_lock = asyncio.Lock()
         self._sort_column = None
         self._sort_reverse = False
 
@@ -158,7 +160,6 @@ class ConnectionsScreen(ModalScreen):
     def on_mount(self) -> None:
         self._empty = self.query_one("#conn_empty", Static)
         self.set_interval(CONN_POLL_INTERVAL, self.refresh_connections)
-        self.refresh_connections()
 
     def action_close_screen(self) -> None:
         self.dismiss()
@@ -191,6 +192,10 @@ class ConnectionsScreen(ModalScreen):
                 self.call_next(self._resort_rows)
 
     async def _close_all_conns(self) -> None:
+        async with self._refresh_lock:
+            await self._close_all_locked()
+
+    async def _close_all_locked(self) -> None:
         await self.api.close_all_connections()
         for row in list(self._rows.values()):
             try:
@@ -238,6 +243,10 @@ class ConnectionsScreen(ModalScreen):
                 hdr.remove_class("sorted")
 
     async def _resort_rows(self):
+        async with self._refresh_lock:
+            await self._resort_locked()
+
+    async def _resort_locked(self):
         if not self._sort_column:
             return
         col = self._sort_column
@@ -256,10 +265,19 @@ class ConnectionsScreen(ModalScreen):
 
         rows_data.sort(key=lambda x: sort_key(x), reverse=reverse)
 
-        scroll = self._scroll
-        await scroll.remove_children()
-        for cid, _, row in rows_data:
-            await scroll.mount(row)
+        # Переставляем СУЩЕСТВУЮЩИЕ строки местами, без удаления/пересоздания:
+        # remove_children + mount оставлял ячейки пустыми до следующего тика.
+        # move_child требует явного before/after: первую строку — в начало,
+        # каждую следующую — после предыдущей.
+        prev = None
+        for _cid, _key, row in rows_data:
+            if prev is None:
+                children = self._scroll.children
+                if children and children[0] is not row:
+                    self._scroll.move_child(row, before=children[0])
+            elif row is not prev:
+                self._scroll.move_child(row, after=prev)
+            prev = row
         self.refresh()
 
     def _default_key(self, raw):
@@ -344,9 +362,11 @@ class ConnectionsScreen(ModalScreen):
 
     @staticmethod
     def _fmt_chain_part(part: str) -> str:
-        """Один элемент цепочки для отображения: флаги → [XX], эмодзи
-        убраны; группы с "Авто" в имени — с кружочком, как в списке нод
-        и селекторе групп."""
+        """Один элемент цепочки для отображения. Windows: флаги → [XX],
+        эмодзи убраны, группам с "Авто" — кружочек (консоль не рендерит
+        эмодзи). Linux/macOS: имя как есть — эмодзи работают."""
+        if get_os() != "windows":
+            return str(part)
         clean = replace_flag_emojis(str(part)).strip()
         low = clean.lower()
         if "авто" in low or "auto" in low:
@@ -372,6 +392,13 @@ class ConnectionsScreen(ModalScreen):
         return replace_flag_emojis(last)
 
     async def refresh_connections(self) -> None:
+        # Любые манипуляции с DOM таблицы (тик обновления, пересортовка,
+        # «прервать все») идут через один lock — иначе возможна гонка:
+        # вставка before=строка, которую в этот момент удалили.
+        async with self._refresh_lock:
+            await self._refresh_locked()
+
+    async def _refresh_locked(self) -> None:
         try:
             proxies = await self.api.get_proxies()
             proxy_data = proxies.get("PROXY", {})
@@ -466,3 +493,4 @@ class ConnectionsScreen(ModalScreen):
                 self._prev.pop(cid, None)
         if self._empty is not None:
             self._empty.display = (len(self._rows) == 0)
+

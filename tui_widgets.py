@@ -67,22 +67,6 @@ class NodeRow(Widget):
         yield Static(Text(self._alive), classes="node-status")
 
 
-class _ConnCell(Static):
-    """Ячейка строки: пересылает Enter/Leave в родительскую строку,
-    чтобы жёлтое выделение срабатывало над всей строкой, а не только
-    над её собственным фоном (Textual :hover до родителя не доводит)."""
-
-    def __init__(self, row: "ConnectionRow", content: str = "", **kwargs):
-        super().__init__(content, **kwargs)
-        self._row = row
-
-    def on_enter(self, event) -> None:
-        self._row._cell_hover(+1)
-
-    def on_leave(self, event) -> None:
-        self._row._cell_hover(-1)
-
-
 class ConnectionRow(Widget):
     DEFAULT_CSS = """
     ConnectionRow {
@@ -91,8 +75,7 @@ class ConnectionRow(Widget):
         width: 100%;
     }
     ConnectionRow Static { color: #0CEBE0; }
-    ConnectionRow:hover, ConnectionRow.row-hover { background: #F0C60A; }
-    ConnectionRow:hover Static, ConnectionRow.row-hover Static { color: #1a1a1a; }
+    ConnectionRow.selected { background: #F0C60A; }
     """
 
     def __init__(self, conn_id: str, on_close=None):
@@ -101,32 +84,32 @@ class ConnectionRow(Widget):
         self._on_close = on_close
         self._cells = {}
         self._raw = {}
-        self._hover_depth = 0
-        self._self_hover = False
 
-    def _cell_hover(self, delta: int) -> None:
-        self._hover_depth = max(0, self._hover_depth + delta)
-        self._apply_hover()
-
-    def on_enter(self, event) -> None:
-        self._self_hover = True
-        self._apply_hover()
-
-    def on_leave(self, event) -> None:
-        self._self_hover = False
-        self._apply_hover()
-
-    def _apply_hover(self) -> None:
-        active = self._self_hover or self._hover_depth > 0
-        self.set_class(active, "row-hover")
-        # Inline-стили надёжнее CSS-каскада: текст и разделители в жёлтой
-        # полосе — чёрные, иначе — бирюзовые.
+    def _apply_state(self) -> None:
+        """Цвета под текущее состояние выделения. Inline-стили надёжнее
+        CSS-каскада (ID-правила экрана перебивают классовые)."""
+        active = "selected" in self.classes
         text_color = "#1a1a1a" if active else "#0CEBE0"
         sep_color = "#1a1a1a" if active else "#F0C60A"
         for st in self._cells.values():
             st.styles.color = text_color
         for sep in self.query("Static.col-sep"):
             sep.styles.color = sep_color
+
+    def _toggle_select(self) -> None:
+        if "selected" in self.classes:
+            self.remove_class("selected")
+            self._apply_state()
+        else:
+            if self.parent is not None:
+                for sibling in self.parent.query(ConnectionRow):
+                    if sibling is not self and "selected" in sibling.classes:
+                        # Снятие класса без обновления цветов оставило бы
+                        # чёрный текст на тёмном фоне — «невидимую» строку.
+                        sibling.remove_class("selected")
+                        sibling._apply_state()
+            self.add_class("selected")
+            self._apply_state()
 
     def compose(self) -> ComposeResult:
         for key, cls in (
@@ -138,7 +121,7 @@ class ConnectionRow(Widget):
             ("ds", "col-ds"), ("dt", "col-dt"),
             ("us", "col-us"), ("ut", "col-ut"),
         ):
-            st = _ConnCell(self, "", classes=cls)
+            st = Static("", classes=cls)
             self._cells[key] = st
             yield st
             yield Static("|", classes="col-sep")
@@ -147,17 +130,27 @@ class ConnectionRow(Widget):
             # id не задаём (дубли по экрану запрещены); обработка — внутри строки.
             yield Static(Text("[X]"), classes="close-x")
 
+    def on_mount(self) -> None:
+        try:
+            self._apply_state()
+        except Exception:
+            pass
+
     def on_click(self, event) -> None:
-        # Клик по [X] закрывает соединение; событие дальше не пускаем.
         ctrl = event.control
         if isinstance(ctrl, Static) and ctrl.has_class("close-x"):
+            # Клик по [X] закрывает соединение; событие дальше не пускаем.
             event.stop()
             if self._on_close is not None:
                 self._on_close(self.conn_id)
+            return
+        # Клик по строке — выделение (полоса появляется только так)
+        self._toggle_select()
 
     def set_data(self, domain, sport, dport, server, rule, ds, dt, us, ut, raw=None):
         # Text(...) — иначе квадратные скобки ([CZ], порты) съедаются
-        # Rich-разметкой Static.
+        # Rich-разметкой Static. Обновление безусловное: гейт по «значение
+        # не изменилось» давал пустые ячейки на части сборок Textual.
         for key, value in (
             ("domain", domain), ("sport", sport), ("dport", dport),
             ("server", server), ("rule", rule),
