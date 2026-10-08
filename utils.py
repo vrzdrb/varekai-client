@@ -541,6 +541,18 @@ def setup_console():
         if kernel32.GetConsoleCursorInfo(handle, ctypes.byref(info)):
             info.bVisible = False
             kernel32.SetConsoleCursorInfo(handle, ctypes.byref(info))
+
+        # Разворачиваем окно консоли на весь экран (best effort: в Windows
+        # Terminal просто не сработает — размер панели задаётся самим WT)
+        try:
+            kernel32.GetConsoleWindow.restype = ctypes.c_void_p
+            hwnd = kernel32.GetConsoleWindow()
+            if hwnd:
+                user32 = ctypes.windll.user32
+                user32.ShowWindow.argtypes = [ctypes.c_void_p, ctypes.c_int]
+                user32.ShowWindow(hwnd, 3)  # SW_MAXIMIZE
+        except Exception:
+            pass
     except Exception:
         pass
 
@@ -634,4 +646,3 @@ def format_group_name(name: str, is_smart: bool = False, force_icon: str = "") -
     if force_icon:
         return f"{icon} {name}"
     return name
-

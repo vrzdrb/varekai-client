@@ -60,7 +60,7 @@ class _BoldText(Static):
         align: center middle;
     }
     _BoldText .fb-spacer { width: 1fr; height: 1; }
-    _BoldText .fb-a { width: auto; height: 1; }
+    _BoldText .fb-a { width: auto; height: 1; text-style: bold; }
     """
 
     def __init__(self, content="", color: str = "#1a1a1a", **kwargs):
@@ -249,8 +249,10 @@ class VarekaiApp(App):
         scrollbar-size: 1 1;
         scrollbar-gutter: stable;  /* место под скроллбар всегда занято */
         scrollbar-background: #3a2855;  /* = фон панели: поле справа как отступ слева */
-        scrollbar-color: #F0C60A;
-        scrollbar-color-active: #f5d020;
+        /* Ползунок в цвет фона лога: никаких глифов скроллбара ни на
+        одной консоли (в т.ч. conhost), симметрия отступов сохраняется. */
+        scrollbar-color: #1a0a30;
+        scrollbar-color-active: #1a0a30;
     }
 
     #label_group { width: 100%; text-align: center; margin: 0 0; }
@@ -342,15 +344,15 @@ class VarekaiApp(App):
     Static { color: #e0e0e0; text-style: bold; }
 
     .col-domain { width: 1fr; min-width: 8; text-align: left; }
-    .col-sport { width: 5; min-width: 0; text-align: right; }
-    .col-dport { width: 5; min-width: 0; text-align: right; }
+    .col-sport { width: 6; min-width: 0; text-align: right; }
+    .col-dport { width: 6; min-width: 0; text-align: right; }
     .col-server { width: 25; min-width: 0; text-align: left; }
     .col-rule   { width: 36; min-width: 0; text-align: left; }
     .col-ds     { width: 8;  min-width: 0; text-align: right; }
     .col-dt     { width: 9;  min-width: 0; text-align: right; }
     .col-us     { width: 8;  min-width: 0; text-align: right; }
     .col-ut     { width: 9;  min-width: 0; text-align: right; }
-    .col-act    { width: 8;  min-width: 0; text-align: center; align-horizontal: center; color: #F0C60A; text-style: bold; }
+    .col-act    { width: 3;  min-width: 0; text-align: center; align-horizontal: center; color: #F0C60A; text-style: bold; }
     .col-sep    { width: 1;  text-align: center; color: #F0C60A; }
     """
 
@@ -966,4 +968,3 @@ class VarekaiApp(App):
 def run_tui():
     app = VarekaiApp()
     app.run()
-

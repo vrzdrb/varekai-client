@@ -3,11 +3,12 @@
 """
 import time
 
+from rich.text import Text
 from textual import events
 from textual.app import ComposeResult
 from textual.containers import Container, Horizontal, VerticalScroll
 from textual.screen import ModalScreen
-from textual.widgets import Button, Static
+from textual.widgets import Static
 
 from clash_api import ClashAPI
 from tui_widgets import ConnectionRow, fmt_bytes, fmt_speed
@@ -41,13 +42,6 @@ class ConnectionsScreen(ModalScreen):
         margin: 1 0;
     }
     .conn-title { width: 1fr; color: #0CEBE0; text-style: bold; text-align: center; }
-    .conn-close-all-btn {
-        width: auto; height: 1;
-        border: none;
-        background: #F50A0A; color: #ffffff;
-        text-style: bold;
-    }
-    .conn-close-all-btn:hover { background: #ff4444; }
     .conn-header {
         layout: horizontal;
         height: 1;
@@ -56,25 +50,39 @@ class ConnectionsScreen(ModalScreen):
         background: #1a0a30;
     }
     .header-cell {
-        color: #F0C60A;
-        text-style: none;
+        background: #F0C60A;
+        color: #1a1a1a;
+        text-style: bold;
+        text-align: center;
+    }
+    /* ID перебивает text-align: right классов колонок на любой консоли */
+    #hdr_sport, #hdr_dport,
+    #hdr_ds, #hdr_dt, #hdr_us, #hdr_ut {
         text-align: center;
     }
     #conn_scroll Static { text-style: none; }  /* таблица — нежирная, остальной текст жирный */
     #conn_scroll .close-x {
         width: 3; height: 1;
         background: #F50A0A; color: #1a1a1a;
+        text-style: bold;
         text-align: center;
         content-align: center middle;
     }
     #conn_scroll .close-x:hover { background: #ff2222; color: #ffffff; }
     .header-cell:hover {
-        background: #2a1a45;
+        background: #f5d020;
     }
     .header-cell.sorted {
-        color: #ffffff;
+        color: #1a1a1a;
         text-style: underline bold;
     }
+    /* Заголовок [X]: красная «кнопка» прерывания ВСЕХ соединений */
+    .conn-header .col-act {
+        background: #F50A0A;
+        color: #1a1a1a;
+        text-style: bold;
+    }
+    #hdr_close:hover { background: #ff4444; }
     #conn_scroll {
         height: 1fr;
         background: #1a0a30;
@@ -122,7 +130,6 @@ class ConnectionsScreen(ModalScreen):
         with Container(classes="conn-panel"):
             with Horizontal(classes="conn-head"):
                 yield Static(t("conn_title"), classes="conn-title")
-                yield Button(t("conn_close_all"), id="conn_close_all", classes="conn-close-all-btn")
             with Horizontal(classes="conn-header"):
                 yield Static(t("col_domain"), id="hdr_domain", classes="header-cell col-domain")
                 yield Static("|", classes="col-sep")
@@ -142,7 +149,7 @@ class ConnectionsScreen(ModalScreen):
                 yield Static("|", classes="col-sep")
                 yield Static(t("col_utotal"), id="hdr_ut", classes="header-cell col-ut")
                 yield Static("|", classes="col-sep")
-                yield Static(t("col_terminate"), classes="col-act")
+                yield Static(Text("[X]"), id="hdr_close", classes="col-act")
             with VerticalScroll(id="conn_scroll") as scroll:
                 self._scroll = scroll
             yield Static(t("conn_empty"), id="conn_empty")
@@ -158,6 +165,9 @@ class ConnectionsScreen(ModalScreen):
 
     def on_click(self, event: events.Click) -> None:
         ctrl = event.control
+        if isinstance(ctrl, Static) and ctrl.id == "hdr_close":
+            self.run_worker(self._close_all_conns())
+            return
         if isinstance(ctrl, Static) and ctrl.has_class("header-cell"):
             col_map = {
                 "hdr_domain": "domain",
@@ -179,12 +189,6 @@ class ConnectionsScreen(ModalScreen):
                     self._sort_reverse = False
                 self._update_header_styles()
                 self.call_next(self._resort_rows)
-
-    def on_button_pressed(self, event: Button.Pressed) -> None:
-        # Закрытие отдельной строки обрабатывает сам ConnectionRow
-        # (событие там останавливается и сюда не доходит).
-        if event.button.id == "conn_close_all":
-            self.run_worker(self._close_all_conns())
 
     async def _close_all_conns(self) -> None:
         await self.api.close_all_connections()
@@ -258,6 +262,37 @@ class ConnectionsScreen(ModalScreen):
             await scroll.mount(row)
         self.refresh()
 
+    def _default_key(self, raw):
+        return (str(raw.get("rule") or ""), str(raw.get("domain") or ""))
+
+    def _active_key(self, raw):
+        """Ключ сортировки строки: выбранный столбец либо порядок
+        по умолчанию (правило, домен)."""
+        if not self._sort_column:
+            return self._default_key(raw)
+        v = raw.get(self._sort_column)
+        if isinstance(v, (int, float)):
+            return v
+        return str(v)
+
+    def _comes_before(self, a, b) -> bool:
+        if not (isinstance(a, tuple) and isinstance(b, tuple)):
+            if not (isinstance(a, (int, float)) and isinstance(b, (int, float))):
+                a, b = str(a), str(b)
+        less = a < b
+        return less if not self._sort_reverse else not less
+
+    def _insert_anchor(self, raw):
+        """Первая существующая строка, которая должна идти ПОСЛЕ новой
+        по текущей сортировке — новую вставляем перед ней. Как в
+        clash-verge-rev: таблица всегда отсортирована, новые элементы
+        встают на свою позицию, а не в конец."""
+        key = self._active_key(raw)
+        for _cid, row in self._rows.items():
+            if self._comes_before(key, self._active_key(row._raw)):
+                return row
+        return None
+
     @staticmethod
     def _conn_sort_key(c):
         meta = c.get("metadata") or {}
@@ -307,6 +342,17 @@ class ConnectionsScreen(ModalScreen):
             name = str(now)
         return chain
 
+    @staticmethod
+    def _fmt_chain_part(part: str) -> str:
+        """Один элемент цепочки для отображения: флаги → [XX], эмодзи
+        убраны; группы с "Авто" в имени — с кружочком, как в списке нод
+        и селекторе групп."""
+        clean = replace_flag_emojis(str(part)).strip()
+        low = clean.lower()
+        if "авто" in low or "auto" in low:
+            return f"● {clean}"
+        return clean
+
     async def _resolve_server(self, c) -> str:
         chains = c.get("chains") or []
         if not chains:
@@ -316,10 +362,13 @@ class ConnectionsScreen(ModalScreen):
             # Цепочка выбора главной группы. Слово PROXY не показываем:
             # если не DIRECT — и так понятно, что трафик идёт в прокси.
             parts = await self._resolve_chain(self._proxy_now)
-            return replace_flag_emojis(" → ".join(parts)) if parts else "PROXY"
+            if not parts:
+                return "PROXY"
+            return " → ".join(self._fmt_chain_part(p) for p in parts)
         if (self._proxies_cache.get(last) or {}).get("now") or (self._proxies_cache.get(last) or {}).get("all"):
             # Последнее звено — группа: показываем всю цепочку выбора.
-            return replace_flag_emojis(" → ".join(await self._resolve_chain(last)))
+            parts = await self._resolve_chain(last)
+            return " → ".join(self._fmt_chain_part(p) for p in parts)
         return replace_flag_emojis(last)
 
     async def refresh_connections(self) -> None:
@@ -385,11 +434,6 @@ class ConnectionsScreen(ModalScreen):
                     ds_txt, us_txt = "—", "—"
             else:
                 ds_txt, us_txt = "—", "—"
-            row = self._rows.get(cid)
-            if row is None:
-                row = ConnectionRow(cid, on_close=self._request_close)
-                await self._scroll.mount(row)
-                self._rows[cid] = row
             raw_data = {
                 "domain": host,
                 "sport": sport_num,
@@ -401,6 +445,15 @@ class ConnectionsScreen(ModalScreen):
                 "us": us,
                 "ut": ul,
             }
+            row = self._rows.get(cid)
+            if row is None:
+                row = ConnectionRow(cid, on_close=self._request_close)
+                anchor = self._insert_anchor(raw_data)
+                if anchor is not None:
+                    await self._scroll.mount(row, before=anchor)
+                else:
+                    await self._scroll.mount(row)
+                self._rows[cid] = row
             row.set_data(host, sport_txt, dport_txt, server, rule_txt, ds_txt, fmt_bytes(dl), us_txt, fmt_bytes(ul), raw_data)
             self._prev[cid] = (dl, ul, now)
         for cid in list(self._rows.keys()):
@@ -413,4 +466,3 @@ class ConnectionsScreen(ModalScreen):
                 self._prev.pop(cid, None)
         if self._empty is not None:
             self._empty.display = (len(self._rows) == 0)
-
