@@ -57,6 +57,23 @@ class ClashAPI:
             pass
         return {}
 
+    async def proxy_delay(self, node_name, timeout_ms=4000, url="http://www.gstatic.com/generate_204"):
+        """Задержка ОДНОЙ ноды. Обновляет её history — результат виден
+        во всех группах, где нода состоит (дедупликация тестов)."""
+        try:
+            r = await self._client.get(
+                f"{self.base_url}/proxies/{quote(node_name, safe='')}/delay",
+                params={"timeout": str(timeout_ms), "url": url},
+                timeout=30.0,
+            )
+            if r.status_code == 200:
+                delay = (r.json() or {}).get("delay")
+                if isinstance(delay, (int, float)) and delay > 0:
+                    return int(delay)
+        except Exception:
+            pass
+        return None
+
     async def get_connections(self):
         try:
             r = await self._client.get(f"{self.base_url}/connections")
@@ -81,4 +98,3 @@ class ClashAPI:
             return r.status_code in (200, 204)
         except Exception:
             return False
-

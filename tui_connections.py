@@ -21,38 +21,40 @@ CONN_POLL_INTERVAL = 0.2  # 5 раз в секунду
 class ConnectionsScreen(ModalScreen):
     CSS = """
     ConnectionsScreen {
-        background: #1a0a30;
+        background: $background;
         layout: vertical;
     }
     ConnectionsScreen Static {
-        color: #0CEBE0;
+        color: $accent;
     }
     .conn-panel {
         width: 100%;
         height: 1fr;
         margin: 0;
-        border: heavy #F0C60A;
-        background: #1a0a30;
-        color: #0CEBE0;
+        border: heavy $primary;
+        background: $background;
+        color: $accent;
         padding: 0 1;
     }
+    /* Ч/б: рамка окна соединений — серая */
+    .th-black_on_white .conn-panel { border: heavy #aeaeae; }
     .conn-head {
         layout: horizontal;
         height: 1;
         width: 100%;
         margin: 1 0;
     }
-    .conn-title { width: 1fr; color: #0CEBE0; text-style: bold; text-align: center; }
+    .conn-title { width: 1fr; color: $accent; text-style: bold; text-align: center; }
     .conn-header {
         layout: horizontal;
         height: 1;
         width: 100%;
         padding: 0 1 0 0;
-        background: #1a0a30;
+        background: $background;
     }
     .header-cell {
-        background: #F0C60A;
-        color: #1a1a1a;
+        background: $primary;
+        color: $secondary;
         text-style: bold;
         text-align: center;
     }
@@ -64,43 +66,43 @@ class ConnectionsScreen(ModalScreen):
     #conn_scroll Static { text-style: none; }  /* таблица — нежирная, остальной текст жирный */
     #conn_scroll .close-x {
         width: 3; height: 1;
-        background: #F50A0A; color: #1a1a1a;
+        background: #F50A0A; color: $secondary;
         text-style: bold;
         text-align: center;
         content-align: center middle;
     }
-    #conn_scroll .close-x:hover { background: #ff2222; color: #ffffff; }
+    #conn_scroll .close-x:hover { background: #ff2222; color: $secondary; }
     .header-cell:hover {
-        background: #f5d020;
+        background: $warning;
     }
     .header-cell.sorted {
-        color: #1a1a1a;
+        color: $secondary;
         text-style: underline bold;
     }
     /* Заголовок [X]: красная «кнопка» прерывания ВСЕХ соединений */
     .conn-header .col-act {
         background: #F50A0A;
-        color: #1a1a1a;
+        color: $secondary;
         text-style: bold;
     }
     #hdr_close:hover { background: #ff4444; }
     #conn_scroll {
         height: 1fr;
-        background: #1a0a30;
+        background: $background;
         scrollbar-size: 1 1;
         scrollbar-gutter: stable;
-        scrollbar-background: #241736;
-        scrollbar-color: #F0C60A;
-        scrollbar-color-active: #f5d020;
+        scrollbar-background: $panel;
+        scrollbar-color: $primary;
+        scrollbar-color-active: $warning;
     }
     #conn_empty {
         width: 100%; text-align: center;
-        color: #0CEBE0; margin: 1 0;
+        color: $accent; margin: 1 0;
     }
     #conn_footer_bar {
         height: 1;
-        background: #1a0a30;
-        color: #0CEBE0;
+        background: $background;
+        color: $accent;
         padding: 0;
         margin: 0;
     }
@@ -126,7 +128,9 @@ class ConnectionsScreen(ModalScreen):
         self._sort_reverse = False
 
     def _conn_footer_text(self) -> str:
-        return f"[bold]   [bold #F0C60A]C[/] {t('key_close_conn')}[/]"
+        from utils import get_theme_colors
+        kc = get_theme_colors()["tech_text"]  # буква клавиши — цвет темы
+        return f"[bold]   [bold {kc}]C[/] {t('key_close_conn')}[/]"
 
     def compose(self) -> ComposeResult:
         with Container(classes="conn-panel"):
@@ -158,6 +162,11 @@ class ConnectionsScreen(ModalScreen):
         yield Static(self._conn_footer_text(), id="conn_footer_bar")
 
     def on_mount(self) -> None:
+        from utils import get_theme_name
+        try:
+            self.add_class(f"th-{get_theme_name()}")
+        except Exception:
+            pass
         self._empty = self.query_one("#conn_empty", Static)
         self.set_interval(CONN_POLL_INTERVAL, self.refresh_connections)
 
@@ -493,4 +502,3 @@ class ConnectionsScreen(ModalScreen):
                 self._prev.pop(cid, None)
         if self._empty is not None:
             self._empty.display = (len(self._rows) == 0)
-

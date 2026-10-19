@@ -89,7 +89,93 @@ DEFAULT_MIRRORS = [
     "https://gh-proxy.org/",
 ]
 
-DEFAULT_SETTINGS = {"language": "ru"}
+DEFAULT_SETTINGS = {"language": "ru", "theme": "dracula"}
+
+# === ТЕМЫ ОФОРМЛЕНИЯ ===
+# Пары: кнопки (bg/text/hover), окна тех. информации (bg/text),
+# заливка (фон экрана/панелей, плашки шапки-футера, текст заголовков).
+# Рамки наследуют цвет кнопок. Статусная строка VPN не темится.
+THEMES = {
+    # Имя НЕ «default»: оно служебное в Textual (self.theme = "default"
+    # включает встроенную тему и игнорирует зарегистрированную).
+    "varekai": {
+        "label": {"ru": "Varekai", "en": "Varekai"},
+        "key_text": "#fccf44",
+        "button_bg": "#fccf44", "button_text": "#1a1a1a", "button_hover": "#FCDB73",
+        "tech_bg": "#2C2936", "tech_text": "#ffffff",
+        "log_bg": "#34313E",
+        "fill_bg": "#2C2936", "panel_bg": "#2C2936", "bar_bg": "#2C2936",
+        "fill_text": "#ffffff",
+        "log_ok": "#34C421", "log_err": "#F50A0A",
+    },
+    "black_on_white": {
+        "label": {"ru": "Чёрное на белом", "en": "Black on white"},
+        "key_text": "#000000",
+        "button_bg": "#FFFFFF", "button_text": "#000000", "button_hover": "#c0c0c0", "button_hover_text": "#000000",
+        "tech_bg": "#DCDCDC", "tech_text": "#000000",
+        "log_bg": "#E4E4E4",
+        "fill_bg": "#DCDCDC", "panel_bg": "#DCDCDC", "bar_bg": "#FFFFFF",
+        "fill_text": "#000000",
+        "log_ok": "#4D4D00", "log_err": "#B00000",
+    },
+    "meshtastic": {
+        "label": {"ru": "Meshtastic", "en": "Meshtastic"},
+        "key_text": "#0cf07a",
+        "button_bg": "#033C1E", "button_text": "#0cf07a", "button_hover": "#0A6337",
+        "tech_bg": "#000000", "tech_text": "#0cf07a",
+        "log_bg": "#171717",
+        "fill_bg": "#000000", "panel_bg": "#000000", "bar_bg": "#033C1E",
+        "fill_text": "#0cf07a",
+        "log_ok": "#34C421", "log_err": "#F50A0A",
+    },
+    "nicedark": {
+        "label": {"ru": "Nicedark", "en": "Nicedark"},
+        "key_text": "#8C8CFF",
+        "button_bg": "#7B7BFF", "button_text": "#101024", "button_hover": "#AFAFFF",
+        "tech_bg": "#14142B", "tech_text": "#8DFFC9",
+        "log_bg": "#242440",
+        "fill_bg": "#1C1C38", "panel_bg": "#1C1C38", "bar_bg": "#26264A",
+        "fill_text": "#E8E8FF",
+        "log_ok": "#34C421", "log_err": "#F50A0A",
+    },
+    "monokai": {
+        "label": {"ru": "Monokai", "en": "Monokai"},
+        "key_text": "#FCD13A",
+        "button_bg": "#3F3309", "button_text": "#FCD13A", "button_hover": "#6E5A12",
+        "tech_bg": "#291C12", "tech_text": "#ffffff",
+        "log_bg": "#31241A",
+        "fill_bg": "#291C12", "panel_bg": "#291C12", "bar_bg": "#1A110A",
+        "fill_text": "#F8F8F2",
+        "log_ok": "#34C421", "log_err": "#F50A0A",
+    },
+    "dracula": {
+        "label": {"ru": "Dracula", "en": "Dracula"},
+        "key_text": "#8BE9FD",
+        "button_bg": "#BD93F9", "button_text": "#282A36", "button_hover": "#D0BFFF",
+        "tech_bg": "#21222C", "tech_text": "#8BE9FD",
+        "log_bg": "#30323E",
+        "fill_bg": "#282A36", "panel_bg": "#282A36", "bar_bg": "#34354A",
+        "fill_text": "#F8F8F2",
+        "log_ok": "#34C421", "log_err": "#F50A0A",
+    },
+}
+
+
+def get_theme_name():
+    try:
+        if SETTINGS_FILE.exists():
+            with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
+                name = json.load(f).get("theme", "dracula")
+                if name == "default":
+                    name = "varekai"  # старое служебное имя
+                return name if name in THEMES else "dracula"
+    except Exception:
+        pass
+    return "dracula"
+
+
+def get_theme_colors(name=None):
+    return THEMES.get(name or get_theme_name(), THEMES["varekai"])
 
 # === ЛОКАЛИЗАЦИЯ ===
 STRINGS = {
@@ -129,6 +215,8 @@ STRINGS = {
         "col_utotal": "↑ Выгружено",
         "col_terminate": "Прервать",
         "label_group": "Группа:",
+        "groups_title": "Группы",
+        "btn_test_ping": "Проверить пинг",
         "select_prompt": "Выберите группу",
         "current_country": "Текущая страна: {country}",
         "country_unknown": "не определена",
@@ -145,6 +233,8 @@ STRINGS = {
         "no_connection": "VPN выключен",
         "log_app": "Лог приложения",
         "log_core": "Лог ядра",
+        "log_copied": "Скопировано в буфер обмена: {n} символов",
+        "log_copy_fail": "Не удалось скопировать: буфер обмена недоступен",
         "conn_title": "Активные подключения",
         "conn_close": "[X] Закрыть",
         "conn_close_all": "[X] Прервать все",
@@ -156,6 +246,8 @@ STRINGS = {
         "key_connections": "Подключения",
         "key_close_conn": "Закрыть",
         "key_lang": "Язык",
+        "key_theme": "Тема",
+        "themes_title": "Тема оформления",
         "key_log_scroll": "Прокрутка лога",
         "lang_current_name": "Русский",
         "admin_required": "Для работы программы требуются права администратора (TUN-режим).",
@@ -238,6 +330,8 @@ STRINGS = {
         "col_utotal": "↑ Uploaded",
         "col_terminate": "Close",
         "label_group": "Group:",
+        "groups_title": "Groups",
+        "btn_test_ping": "Test ping",
         "select_prompt": "Select group",
         "current_country": "Current country: {country}",
         "country_unknown": "unknown",
@@ -254,6 +348,8 @@ STRINGS = {
         "no_connection": "VPN OFF",
         "log_app": "App log",
         "log_core": "Core log",
+        "log_copied": "Copied to clipboard: {n} characters",
+        "log_copy_fail": "Copy failed: clipboard unavailable",
         "conn_title": "Active connections",
         "conn_close": "[X] Close",
         "conn_close_all": "[X] Close all",
@@ -265,6 +361,8 @@ STRINGS = {
         "key_connections": "Connections",
         "key_close_conn": "Close",
         "key_lang": "Lang",
+        "key_theme": "Theme",
+        "themes_title": "Color theme",
         "key_log_scroll": "Log scroll",
         "lang_current_name": "English",
         "admin_required": "Administrator rights are required (TUN mode).",
@@ -518,6 +616,61 @@ def load_settings():
 def save_settings(settings):
     with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
         json.dump(settings, f, ensure_ascii=False, indent=2)
+
+
+def copy_to_clipboard(text: str) -> bool:
+    """Кросс-платформенное копирование в буфер обмена.
+    Сначала нативные механизмы ОС; если их нет — OSC52 (escape-
+    последовательность, которую терминал кладёт в системный буфер сам).
+    Возвращает True, если текст отправлен в буфер."""
+    data = text.encode("utf-8")
+    try:
+        if get_os() == "darwin" and shutil.which("pbcopy"):
+            subprocess.Popen(["pbcopy"], stdin=subprocess.PIPE).communicate(data)
+            return True
+        if get_os() == "linux":
+            for cmd in (
+                ["wl-copy"],
+                ["xclip", "-selection", "clipboard"],
+                ["xsel", "--clipboard", "--input"],
+            ):
+                if shutil.which(cmd[0]):
+                    subprocess.Popen(cmd, stdin=subprocess.PIPE).communicate(data)
+                    return True
+        if get_os() == "windows":
+            import ctypes
+
+            cf_unicodetext = 13
+            gmem_moveable = 0x0002
+            user32 = ctypes.windll.user32
+            kernel32 = ctypes.windll.kernel32
+            # Без restype=c_void_p указатели обрезаются до 32 бит
+            kernel32.GlobalAlloc.restype = ctypes.c_void_p
+            kernel32.GlobalLock.restype = ctypes.c_void_p
+            if not user32.OpenClipboard(None):
+                return False
+            try:
+                user32.EmptyClipboard()
+                raw = text.encode("utf-16-le") + b"\x00\x00"
+                handle = kernel32.GlobalAlloc(gmem_moveable, len(raw))
+                ptr = kernel32.GlobalLock(handle)
+                ctypes.memmove(ptr, raw, len(raw))
+                kernel32.GlobalUnlock(handle)
+                user32.SetClipboardData(cf_unicodetext, handle)
+                return True
+            finally:
+                user32.CloseClipboard()
+    except Exception:
+        pass
+    # OSC52: сам терминал положит base64-текст в системный буфер обмена
+    try:
+        import base64
+
+        sys.stdout.write("\x1b]52;c;" + base64.b64encode(data).decode("ascii") + "\x07")
+        sys.stdout.flush()
+        return True
+    except Exception:
+        return False
 
 
 def setup_console():

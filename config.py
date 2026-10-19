@@ -50,6 +50,10 @@ def generate_smart_config():
         for key in ("external-ui", "external-ui-name", "external-ui-url"):
             config.pop(key, None)
 
+        # Лог-окно лаунчера показывает именно ядро — Info нужен всегда,
+        # независимо от log-level в профиле подписки.
+        config["log-level"] = "info"
+
         # Смарт-стратегии ВСЕГДА включены
         if "proxy-groups" in config and isinstance(config["proxy-groups"], list):
             for group in config["proxy-groups"]:
@@ -96,4 +100,3 @@ def get_api_secret():
         return config.get("secret", "varekai")
     except Exception:
         return "varekai"
-

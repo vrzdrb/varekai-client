@@ -17,7 +17,7 @@ class RollbackScreen(ModalScreen):
 
     CSS = """
     RollbackScreen {
-        background: #50007a;
+        background: $background;
         layout: vertical;
         align: center middle;
     }
@@ -26,15 +26,15 @@ class RollbackScreen(ModalScreen):
         max-width: 90%;
         height: auto;
         max-height: 90%;
-        border: heavy #F0C60A;
-        background: #3a2855;
-        color: #e0e0e0;
+        border: heavy $primary;
+        background: $panel;
+        color: $foreground;
         padding: 1 2;
     }
     .rb-title {
         width: 100%;
         text-align: center;
-        color: #F0C60A;
+        color: $primary;
         text-style: bold;
         margin: 0 0 1 0;
     }
@@ -42,25 +42,25 @@ class RollbackScreen(ModalScreen):
         height: auto;
         max-height: 1fr;
         scrollbar-size: 1 1;
-        scrollbar-background: #241736;
-        scrollbar-color: #F0C60A;
+        scrollbar-background: $panel;
+        scrollbar-color: $primary;
     }
     .rb-item {
         width: 100%;
         height: 1;
         border: none;
         background: transparent;
-        color: #0CEBE0;
+        color: $accent;
         text-align: left;
     }
     .rb-item:hover {
-        background: #F0C60A;
-        color: #1a1a1a;
+        background: $primary;
+        color: $secondary;
     }
     .rb-empty {
         width: 100%;
         text-align: center;
-        color: #0CEBE0;
+        color: $accent;
         margin: 1 0;
     }
     .rb-cancel {
