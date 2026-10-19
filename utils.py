@@ -89,7 +89,7 @@ DEFAULT_MIRRORS = [
     "https://gh-proxy.org/",
 ]
 
-DEFAULT_SETTINGS = {"language": "ru", "theme": "dracula"}
+DEFAULT_SETTINGS = {"language": "ru", "theme": "ikigai"}
 
 # === ТЕМЫ ОФОРМЛЕНИЯ ===
 # Пары: кнопки (bg/text/hover), окна тех. информации (bg/text),
@@ -148,8 +148,8 @@ THEMES = {
         "fill_text": "#F8F8F2",
         "log_ok": "#34C421", "log_err": "#F50A0A",
     },
-    "dracula": {
-        "label": {"ru": "Dracula", "en": "Dracula"},
+    "ikigai": {
+        "label": {"ru": "Ikigai", "en": "Ikigai"},
         "key_text": "#8BE9FD",
         "button_bg": "#BD93F9", "button_text": "#282A36", "button_hover": "#D0BFFF",
         "tech_bg": "#21222C", "tech_text": "#8BE9FD",
@@ -165,13 +165,15 @@ def get_theme_name():
     try:
         if SETTINGS_FILE.exists():
             with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
-                name = json.load(f).get("theme", "dracula")
+                name = json.load(f).get("theme", "ikigai")
                 if name == "default":
                     name = "varekai"  # старое служебное имя
-                return name if name in THEMES else "dracula"
+                elif name == "dracula":
+                    name = "ikigai"  # тема переименована
+                return name if name in THEMES else "ikigai"
     except Exception:
         pass
-    return "dracula"
+    return "ikigai"
 
 
 def get_theme_colors(name=None):

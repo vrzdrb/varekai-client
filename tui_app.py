@@ -30,13 +30,12 @@ from core import (
 from tui_connections import ConnectionsScreen
 from tui_rollback import RollbackScreen
 from tui_widgets import (
-    _BoldText,
     BoldLabel,
-    ConnectionRow,
     FlatButton,
     GroupRow,
     NodeRow,
     SelectableRichLog,
+    _BoldText,
     fmt_core_line,
 )
 from utils import (
@@ -45,10 +44,10 @@ from utils import (
     CORE_LOG,
     THEMES,
     format_group_name,
-    get_theme_colors,
-    get_theme_name,
     get_language,
     get_os,
+    get_theme_colors,
+    get_theme_name,
     load_settings,
     replace_flag_emojis,
     save_settings,
@@ -316,7 +315,6 @@ class VarekaiApp(App):
     }
 
     #groups_scroll NodeRow Static { color: $accent; }
-    #groups_scroll NodeRow:hover Static { color: $secondary; }
     NodeRow.current, NodeRow.current Static {
         color: $secondary !important;
     }
@@ -385,10 +383,6 @@ class VarekaiApp(App):
     .col-act    { width: 3;  min-width: 0; text-align: center; align-horizontal: center; color: $primary; text-style: bold; }
     .col-sep    { width: 1;  text-align: center; color: $primary; }
 
-    /* hover строк нод — в screen-CSS: псевдо-правила из DEFAULT_CSS
-       виджетов в Textual 8 не срабатывают */
-    #groups_scroll .node-row:hover { background: $warning; }
-    #groups_scroll .node-row:hover Static { color: $secondary; }
     /* Кнопки групп: без фиксации высоты класс btn-action растягивал
        кнопку на всю раскрытую группу */
     #groups_scroll .group-btn { height: 2; width: 100%; }
@@ -398,7 +392,7 @@ class VarekaiApp(App):
     .thbtn-meshtastic { background: #033C1E; }
     .thbtn-nicedark { background: #7B7BFF; }
     .thbtn-monokai { background: #3F3309; }
-    .thbtn-dracula { background: #BD93F9; }
+    .thbtn-ikigai { background: #BD93F9; }
     /* Ч/б: рамки всех окон — серые (мягче чистого чёрного) */
     .th-black_on_white .panel,
     .th-black_on_white #log_frame,
@@ -514,13 +508,11 @@ class VarekaiApp(App):
         self._core_buf = deque(maxlen=1000)
         self.update_status()
         self.set_interval(0.3, self.tail_logs)
-        self.set_interval(0.3, self._hover_sanity)
         self.set_interval(2.0, self.poll_proxies)
         self._register_themes()
         self._apply_theme(get_theme_name(), save=False)
         self._hovered_widget = None
-        self._hovered_row = None
-        self._last_mouse = None
+        self._sel_node = None  # выделенная кликом строка ноды: (group, key)
 
     def update_status(self):
         pid = get_core_pid()
@@ -661,16 +653,16 @@ class VarekaiApp(App):
         self.brief_log(t("brief_lang_changed", lang=new_lang))
 
     def on_mouse_move(self, event) -> None:
-        """Единый hover для кнопок и строк нод: Enter/Leave в Textual 8 не
-        доходят до виджетов внутри скроллов, а CSS :hover снимается с
-        задержкой — отслеживаем курсор сами и красим инлайн мгновенно.
+        """Hover для кнопок (FlatButton): Enter/Leave в Textual 8 не доходят
+        до виджетов внутри скроллов и модалок — подсветку кнопок ведём
+        инлайн по позиции курсора. Строки нод hover не используют:
+        их выделение — по клику, как в таблице соединений.
         API поиска виджета под курсором в v8 мог быть переименован —
         перебираем варианты с однократной диагностикой."""
-        self._last_mouse = (event.screen_x, event.screen_y)
         self._update_hover(event.screen_x, event.screen_y)
 
     def _update_hover(self, x, y) -> None:
-        """Пересчёт hover по координатам экрана (тело трекера)."""
+        """Пересчёт hover кнопок по координатам экрана (тело трекера)."""
         screen = self.screen
         getter = getattr(screen, "get_widget_at", None) or getattr(screen, "widget_at", None)
         if getter is None:
@@ -688,69 +680,24 @@ class VarekaiApp(App):
         except Exception:
             return
         widget = result[0] if isinstance(result, tuple) else result
-        # Один подъём по родителям: ищем и кнопку (_BoldText), и строку ноды
-        bold_target = None
-        row_target = None
-        node = widget
-        while node is not None:
-            if bold_target is None and isinstance(node, _BoldText) and node.has_class(*_BoldText.HOVER_CLASSES):
-                bold_target = node
-            if row_target is None and isinstance(node, NodeRow):
-                row_target = node
-            if bold_target is not None and row_target is not None:
-                break
-            node = getattr(node, "parent", None)
-        # Кнопки: hover-инлайн как раньше
-        if bold_target is not self._hovered_widget:
-            old = self._hovered_widget
-            self._hovered_widget = bold_target
-            if isinstance(old, _BoldText):
-                try:
-                    old._apply_leave()
-                except Exception:
-                    pass
-            if isinstance(bold_target, _BoldText):
-                try:
-                    bold_target._apply_enter()
-                except Exception:
-                    pass
-        # Строки нод: CSS :hover в Textual 8 «залипает» и снимается с
-        # задержкой — hover строк дублируем инлайн: включается и
-        # ВЫКЛЮЧАЕТСЯ мгновенно, по событию движения курсора
-        if row_target is not self._hovered_row:
-            old_row = self._hovered_row
-            self._hovered_row = row_target
-            if old_row is not None:
-                try:
-                    old_row._apply_hover(False)
-                except Exception:
-                    pass
-            if row_target is not None:
-                try:
-                    row_target._apply_hover(True)
-                except Exception:
-                    pass
-
-    def _rehover_at_last_pos(self) -> None:
-        """Пересчёт hover по последней известной позиции курсора."""
-        if self._last_mouse is None:
+        while widget is not None and not (
+            isinstance(widget, _BoldText) and widget.has_class(*_BoldText.HOVER_CLASSES)
+        ):
+            widget = getattr(widget, "parent", None)
+        if widget is self._hovered_widget:
             return
-        if isinstance(self.screen, (ConnectionsScreen, RollbackScreen)):
-            return  # под модалками трекер главного экрана молчит
-        self._update_hover(*self._last_mouse)
-
-    def _hover_sanity(self) -> None:
-        """Страховка от «залипания»: если события движения по какой-то
-        причине не дошли до приложения (скролл колесом, рывок курсора,
-        окно временно расфокусировано), hover пересчитывается по последней
-        известной позиции — без ожидания следующего движения мыши."""
-        self._rehover_at_last_pos()
-
-    def on_mouse_scroll_down(self, event) -> None:
-        self._rehover_at_last_pos()  # контент под курсором съехал при прокрутке
-
-    def on_mouse_scroll_up(self, event) -> None:
-        self._rehover_at_last_pos()
+        old = self._hovered_widget
+        self._hovered_widget = widget
+        if isinstance(old, _BoldText):
+            try:
+                old._apply_leave()
+            except Exception:
+                pass
+        if isinstance(widget, _BoldText):
+            try:
+                widget._apply_enter()
+            except Exception:
+                pass
 
     def _register_themes(self) -> bool:
         try:
@@ -831,6 +778,13 @@ class VarekaiApp(App):
                 pass
         # Выделенные строки соединений — перекраска под тему
         for row in self.query("ConnectionRow"):
+            try:
+                row._apply_state()
+            except Exception:
+                pass
+        # Строки нод: цвета ячеек инлайн (NodeRow._apply_state) — без
+        # пересчёта остаются от прежней темы до пересборки списка
+        for row in self.query(NodeRow):
             try:
                 row._apply_state()
             except Exception:
@@ -1212,7 +1166,6 @@ class VarekaiApp(App):
     def _on_group_toggle(self, group: str) -> None:
         self._open_group = None if self._open_group == group else group
         self._nodes_sig = None  # закрытие/открытие — список нод пересобрать
-        self._hovered_row = None  # строки пересоздаются, hover-ссылка протухнет
         # без цветовой разметки: в v8 тегированные строки в логе
         # местами рендерятся тёмным — обычный текст читается всегда
         self.brief_log(f"▸ {replace_flag_emojis(group)}")
@@ -1229,7 +1182,24 @@ class VarekaiApp(App):
             self._report_error("rerender_groups")
 
     def _on_node_select(self, group: str, node: str) -> None:
+        # Выделение как в таблице соединений: клик выделяет строку,
+        # повторный клик по той же — снимает выделение
+        key = (group, node)
+        self._sel_node = None if self._sel_node == key else key
+        self._apply_node_selection()
         self.run_worker(self._select_node(group, node))
+
+    def _apply_node_selection(self) -> None:
+        """Раскраска выделенной строки (и снятие с остальных)."""
+        try:
+            for row in self.query(NodeRow):
+                sel = (self._sel_node is not None
+                       and (row._group, row._key or row._name) == self._sel_node)
+                if ("selected" in row.classes) != sel:
+                    row.set_class(sel, "selected")
+                    row._apply_state()
+        except Exception:
+            pass
 
     async def _render_groups(self, ordered, proxies) -> None:
         async with self._groups_lock:
@@ -1321,6 +1291,8 @@ class VarekaiApp(App):
                 index=idx, name=display, delay=delay, alive=alive, current=cur,
                 group=self._open_group, on_select=self._on_node_select,
                 key=key,
+                selected=(self._sel_node is not None
+                          and (self._open_group, key) == self._sel_node),
             )
             for idx, (key, display, delay, alive, cur) in enumerate(rows)
         ]

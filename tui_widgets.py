@@ -8,7 +8,7 @@ from rich.style import Style
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Container, Horizontal, Vertical
+from textual.containers import Container
 from textual.widget import Widget
 from textual.widgets import Button, RichLog, Static
 
@@ -125,18 +125,12 @@ class FlatButton(_BoldText):
 
 
 class _NodeCell(Static):
-    """Ячейка строки ноды: пересылает Enter/Leave в строку (hover
-    через дочерние Static к родителю в Textual не проваливается)."""
+    """Ячейка строки ноды. Hover у строк нет (как в таблице соединений):
+    выделение только кликом, поэтому Enter/Leave здесь не нужны."""
 
     def __init__(self, row: "NodeRow", content="", **kwargs):
         super().__init__(content, **kwargs)
         self._row = row
-
-    def on_enter(self, event) -> None:
-        self._row._hover(1)
-
-    def on_leave(self, event) -> None:
-        self._row._hover(-1)
 
 
 class NodeRow(Widget):
@@ -149,14 +143,22 @@ class NodeRow(Widget):
     NodeRow Static { color: $accent; }
     NodeRow.current { background: $primary; }
     NodeRow.current Static { color: $secondary !important; }
+    /* Выделение кликом — как ConnectionRow.selected: фон из класса,
+       цвета текста инлайн в _apply_state */
+    NodeRow.selected { background: $primary; }
     NodeRow .node-name { width: 1fr; text-align: left; }
     NodeRow .node-delay { width: 10; text-align: center; }
     NodeRow .node-status { width: 10; text-align: center; }
     """
 
     def __init__(self, index: int, name: str, delay: str, alive: str, current: bool,
-                 group: str = "", on_select=None, key: str = ""):
-        super().__init__(classes=("current " if current else "") + "node-row")
+                 group: str = "", on_select=None, key: str = "", selected: bool = False):
+        classes = "node-row"
+        if current:
+            classes += " current"
+        if selected:
+            classes += " selected"
+        super().__init__(classes=classes)
         self.index = index
         self._name = name      # отображаемый текст (может быть переводом)
         self._key = key        # служебный ключ (например AUTO_RESET)
@@ -164,7 +166,6 @@ class NodeRow(Widget):
         self._alive = alive
         self._group = group
         self._on_select = on_select
-        self._hov_depth = 0
 
     def compose(self) -> ComposeResult:
         # replace_flag_emojis: на Windows 🇷🇺 -> [RU], как в app.log
@@ -174,27 +175,21 @@ class NodeRow(Widget):
         yield _NodeCell(self, Text(self._delay), classes="node-delay")
         yield _NodeCell(self, Text(self._alive), classes="node-status")
 
-    def _hover(self, delta: int) -> None:
-        self._hov_depth = max(0, self._hov_depth + delta)
-        if self._hov_depth:
-            self._apply_hover(True)
-        else:
-            self.call_after_refresh(self._maybe_hover_off)
+    def on_mount(self) -> None:
+        try:
+            self._apply_state()
+        except Exception:
+            pass
 
-    def _maybe_hover_off(self) -> None:
-        if not self._hov_depth:
-            self._apply_hover(False)
-
-    def _apply_hover(self, hovered: bool) -> None:
+    def _apply_state(self) -> None:
+        """Цвета ячеек под состояние выделения — зеркалит ConnectionRow:
+        фон даёт класс selected из CSS, инлайн только цвет текста."""
+        active = "selected" in self.classes
         th = get_theme_colors()
-        self.styles.background = th["button_hover"] if hovered else "transparent"
-        if hovered:
-            text = th.get("button_hover_text") or th["button_text"]
-        else:
-            text = th["tech_text"]
+        text_color = th["button_text"] if active else th["tech_text"]
         for cls in ("node-name", "node-delay", "node-status"):
             try:
-                self.query_one(f".{cls}", Static).styles.color = text
+                self.query_one(f".{cls}", Static).styles.color = text_color
             except Exception:
                 pass
 
