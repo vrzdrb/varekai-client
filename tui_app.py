@@ -55,6 +55,7 @@ from utils import (
     t,
 )
 
+
 def _lc(ok: bool) -> str:
     """Цвет строки лога (успех/ошибка) из палитры текущей темы."""
     return get_theme_colors()["log_ok" if ok else "log_err"]
