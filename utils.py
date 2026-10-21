@@ -107,6 +107,9 @@ THEMES = {
     # Статусная строка VPN не темится.
     "varekai": {
         "modal_text": "#ffffff",
+        "footer_bg": "#615E68",   # фон строки подсказок (+25%)
+        "footer_key": "#fccf44",  # текст клавиш
+        "footer_hint": "#FFFFFF",  # текст подсказок
         "frame_color": "#fccf44",  # цвет рамок окон темы
         "rollback_title": "#fccf44",  # заголовок окна выбора ядра
         "rollback_item": "#ffffff",  # строки версий в окне выбора ядра
@@ -123,6 +126,9 @@ THEMES = {
     },
     "nanita": {
         "modal_text": "#000000",
+        "footer_bg": "#79818C",   # фон строки подсказок
+        "footer_key": "#FFFFFF",  # текст клавиш
+        "footer_hint": "#000000",  # текст подсказок (nanita — чёрный)
         "frame_color": "#aeaeae",  # цвет рамок окон темы
         "rollback_title": "#000000",  # заголовок окна выбора ядра
         "rollback_item": "#000000",  # строки версий в окне выбора ядра
@@ -139,6 +145,9 @@ THEMES = {
     },
     "geek_green": {
         "modal_text": "#0cf07a",
+        "footer_bg": "#033C1E",   # фон строки подсказок
+        "footer_key": "#0cf07a",  # текст клавиш
+        "footer_hint": "#0cf07a",  # текст подсказок — зелёный, как весь текст
         "frame_color": "#033C1E",  # цвет рамок окон темы
         "rollback_title": "#0cf07a",  # заголовок окна выбора ядра
         "rollback_item": "#0cf07a",  # строки версий в окне выбора ядра
@@ -155,6 +164,9 @@ THEMES = {
     },
     "blue_fir": {
         "modal_text": "#F6C884",
+        "footer_bg": "#646E7A",   # фон строки подсказок (+25%)
+        "footer_key": "#F6C884",  # текст клавиш
+        "footer_hint": "#FFFFFF",  # текст подсказок
         "frame_color": "#349da8",  # цвет рамок окон темы
         "rollback_title": "#F6C884",  # заголовок окна выбора ядра
         "rollback_item": "#FFFFFF",  # строки версий в окне выбора ядра
@@ -172,6 +184,9 @@ THEMES = {
     },
     "monokai": {
         "modal_text": "#F8F8F2",
+        "footer_bg": "#534C47",   # фон строки подсказок (+25%)
+        "footer_key": "#FCD13A",  # текст клавиш
+        "footer_hint": "#FFFFFF",  # текст подсказок
         "frame_color": "#FCD13A",  # цвет рамок окон темы
         "rollback_title": "#F8F8F2",  # заголовок окна выбора ядра
         "rollback_item": "#FCD13A",  # строки версий в окне выбора ядра
@@ -188,6 +203,9 @@ THEMES = {
     },
     "ikigai": {
         "modal_text": "#F8F8F2",
+        "footer_bg": "#34354A",   # фон строки подсказок
+        "footer_key": "#8BE9FD",  # текст клавиш
+        "footer_hint": "#FFFFFF",  # текст подсказок
         "frame_color": "#BD93F9",  # цвет рамок окон темы
         "rollback_title": "#F8F8F2",  # заголовок окна выбора ядра
         "rollback_item": "#8BE9FD",  # строки версий в окне выбора ядра

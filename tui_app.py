@@ -64,7 +64,7 @@ def _lc(ok: bool) -> str:
 
 AUTO_RESET = "__AUTO_RESET__"
 NO_CONN = "__NO_CONN__"
-UI_REV = "gr60"  # маркер сборки интерфейса (для проверки, какой код реально запущен)
+UI_REV = "gr67"  # маркер сборки интерфейса (для проверки, какой код реально запущен)
 
 class QuitScreen(ModalScreen):
     """Подтверждение выхода при работающем VPN: Да — выйти, оставив VPN;
@@ -117,7 +117,12 @@ class QuitScreen(ModalScreen):
         try:
             self.add_class(f"th-{get_theme_name()}")
             th = get_theme_colors()
-            self.query_one(".quit-panel", Container).styles.background = th["modal_bg"]
+            panel = self.query_one(".quit-panel", Container)
+            panel.styles.background = th["modal_bg"]
+            # Nanita: рамка диалога — чёрная (инлайн: per-theme CSS на
+            # модалках в Textual 8 не матчатся)
+            if get_theme_name() == "nanita":
+                panel.styles.border = ("heavy", "#000000")
             # Текст вопроса — modal_text: у nanita чёрный на сером фоне
             self.query_one(".quit-text", Static).styles.color = th["modal_text"]
         except Exception:
@@ -176,12 +181,12 @@ class ThemesScreen(ModalScreen):
                 )
 
     def on_mount(self) -> None:
-        # Рамка — как у окна выбора ядра: frame_color (blue_fir #349da8,
-        # monokai #FCD13A), nanita — fill_bg. Инлайн: per-theme CSS на
-        # модалках в Textual 8 не матчатся.
+        # Рамка: frame_color (blue_fir #349da8, monokai #FCD13A),
+        # nanita — белая (button_bg). Инлайн: per-theme CSS на модалках
+        # в Textual 8 не матчатся.
         try:
             th = get_theme_colors()
-            border_color = th["fill_bg"] if get_theme_name() == "nanita" else th["frame_color"]
+            border_color = th["button_bg"] if get_theme_name() == "nanita" else th["frame_color"]
             self.query_one(".th-panel", Container).styles.border = ("heavy", border_color)
         except Exception:
             pass
@@ -488,9 +493,10 @@ class VarekaiApp(App):
 
     def _footer_text(self) -> str:
         th = get_theme_colors()
-        kc = th.get("key_text") or th["tech_text"]
-        # Подсказки — отдельный ключ (у blue_fir они белые, клавиши оранжевые)
-        hc = th.get("hint_text") or kc
+        # Цвета строки подсказок — свои ключи (nanita: фон = group_bg,
+        # клавиши белые, подсказки = цвет основного фона)
+        kc = th["footer_key"]
+        hc = th["footer_hint"]
         return (
             f"[bold][bold {kc}]S[/] - [bold {hc}]{t('key_toggle')}[/]    "
             f"[bold {kc}]C[/] - [bold {hc}]{t('key_connections')}[/]    "
@@ -751,12 +757,16 @@ class VarekaiApp(App):
             self.screen.add_class(f"th-{name}")
         except Exception:
             pass
-        # Плашки шапки/футера — вне токенов
-        for wid in ("#app_header", "#footer_bar"):
-            try:
-                self.query_one(wid, Static).styles.background = th["bar_bg"]
-            except Exception:
-                pass
+        # Плашка шапки — вне токенов
+        try:
+            self.query_one("#app_header", Static).styles.background = th["bar_bg"]
+        except Exception:
+            pass
+        # Строка подсказок — footer_bg (nanita: как кнопки групп)
+        try:
+            self.query_one("#footer_bar", Static).styles.background = th["footer_bg"]
+        except Exception:
+            pass
         # Тех. окна — явное присвоение из палитры: на части сборок токен
         # $surface рендерился не тем оттенком, инлайн перебивает каскад
         for wid in ("#groups_scroll",):

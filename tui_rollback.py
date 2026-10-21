@@ -15,15 +15,10 @@ from utils import apply_scrollbar_palette, get_theme_colors, get_theme_name, t
 class RbItem(Button):
     """Строка версии ядра в окне отката. Подсветка под курсором —
     цветами выделенной ноды в списке нод (select_bg/select_text).
-    Hover ведёт трекер курсора приложения (маркер hv-track): Enter/Leave
-    в Textual 8 в модалки не доходят, а CSS :hover там не срабатывает.
     Цвета читаются из ЖИВОЙ палитры — при смене темы строки не залипают."""
 
     def __init__(self, label: str, **kwargs):
-        super().__init__(label, classes="rb-item hv-track", **kwargs)
-
-    def __init__(self, label: str, **kwargs):
-        super().__init__(label, **kwargs)
+        super().__init__(label, classes="rb-item", **kwargs)
         self._hovered = False
 
     def on_mount(self) -> None:

@@ -132,9 +132,11 @@ class ConnectionsScreen(ModalScreen):
 
     def _conn_footer_text(self) -> str:
         from utils import get_theme_colors
+        # Те же ключи, что у строки подсказок основного окна:
+        # footer_key/footer_hint — менять цвета в одном месте (палитра)
         th = get_theme_colors()
-        kc = th.get("key_text") or th["tech_text"]  # буква клавиши — цвет темы
-        hc = th.get("hint_text") or kc
+        kc = th["footer_key"]
+        hc = th["footer_hint"]
         # Esc — тоже закрывает окно (binding на экране), показываем оба
         return f"[bold]   [bold {kc}]Esc, C[/] - [bold {hc}]{t('key_close_conn')}[/]"
 
@@ -180,17 +182,20 @@ class ConnectionsScreen(ModalScreen):
             th = get_theme_colors()
             self.query_one(".conn-panel").styles.background = th["fill_bg"]
             self.query_one("#conn_scroll").styles.background = th["tech_bg"]
-            # Токен $accent в Textual 8 залипает не белым — фиксируем инлайн:
-            # заголовок = tech_text (в blue fir — белый)
-            self.query_one(".conn-title", Static).styles.color = th["tech_text"]
+            # Токен $accent в Textual 8 залипает — фиксируем инлайн:
+            # заголовок = tech_text; nanita — белый (tech_text там чёрный,
+            # на тёмном фоне окна не читается)
+            from utils import get_theme_name
+            title_color = th["fill_text"] if get_theme_name() == "nanita" else th["tech_text"]
+            self.query_one(".conn-title", Static).styles.color = title_color
         except Exception:
             pass
         # Заголовки колонок красятся сами (HeaderCell.on_mount: цвета
         # основных кнопок, hover — как у кнопок, через трекер курсора)
         apply_scrollbar_palette(self.query_one("#conn_scroll"))
-        # Строка футера — того же цвета, что в основном окне (bar_bg)
+        # Строка футера — тех же цветов, что в основном окне (footer_bg)
         try:
-            self.query_one("#conn_footer_bar").styles.background = get_theme_colors()["bar_bg"]
+            self.query_one("#conn_footer_bar").styles.background = get_theme_colors()["footer_bg"]
         except Exception:
             pass
         self._empty = self.query_one("#conn_empty", Static)

@@ -2,8 +2,6 @@
 Общие helper-функции форматирования и переиспользуемые виджеты TUI.
 """
 import re
-import time
-from pathlib import Path
 
 from rich.segment import Segment
 from rich.style import Style
@@ -118,8 +116,6 @@ class _BoldText(Static):
             pass
 
 
-class BoldLabel(_BoldText):
-    """Однострочная подпись с гарантированно жирным текстом."""
 class BoldLabel(_BoldText):
     """Однострочная подпись с гарантированно жирным текстом."""
 
