@@ -43,6 +43,7 @@ from utils import (
     CORE_BINARY,
     CORE_LOG,
     THEMES,
+    apply_scrollbar_palette,
     format_group_name,
     get_language,
     get_os,
@@ -63,7 +64,7 @@ def _lc(ok: bool) -> str:
 
 AUTO_RESET = "__AUTO_RESET__"
 NO_CONN = "__NO_CONN__"
-UI_REV = "gr36"  # маркер сборки интерфейса (для проверки, какой код реально запущен)
+UI_REV = "gr60"  # маркер сборки интерфейса (для проверки, какой код реально запущен)
 
 class QuitScreen(ModalScreen):
     """Подтверждение выхода при работающем VPN: Да — выйти, оставив VPN;
@@ -95,7 +96,8 @@ class QuitScreen(ModalScreen):
         background: $primary; color: $secondary; text-style: bold;
     }
     .quit-btn:hover { background: $warning; }
-    .quit-sep { width: 1; height: 3; background: $panel; }
+    /* Прозрачный: иначе на сером фоне nanita между кнопками — тёмно-серая полоса */
+    .quit-sep { width: 1; height: 3; background: transparent; }
     """
 
     BINDINGS = [("escape", "cancel", "Cancel")]
@@ -107,6 +109,19 @@ class QuitScreen(ModalScreen):
                 yield FlatButton(t("quit_dialog_yes"), id="quit_yes", classes="quit-btn")
                 yield Static("", classes="quit-sep")
                 yield FlatButton(t("quit_dialog_no"), id="quit_no", classes="quit-btn")
+
+    def on_mount(self) -> None:
+        # Класс темы: per-theme CSS (рамки .quit-panel) применяется
+        # только с ним — без класса окно оставалось на дефолтных токенах.
+        # Фон/текст — из палитры, как у панелей основного окна.
+        try:
+            self.add_class(f"th-{get_theme_name()}")
+            th = get_theme_colors()
+            self.query_one(".quit-panel", Container).styles.background = th["modal_bg"]
+            # Текст вопроса — modal_text: у nanita чёрный на сером фоне
+            self.query_one(".quit-text", Static).styles.color = th["modal_text"]
+        except Exception:
+            pass
 
     def action_cancel(self) -> None:
         self.dismiss(None)
@@ -161,9 +176,15 @@ class ThemesScreen(ModalScreen):
                 )
 
     def on_mount(self) -> None:
-        # фон кнопок задаётся CSS-классами .thbtn-<тема> —
-        # инлайн-фон подавлял :hover
-        pass
+        # Рамка — как у окна выбора ядра: frame_color (blue_fir #349da8,
+        # monokai #FCD13A), nanita — fill_bg. Инлайн: per-theme CSS на
+        # модалках в Textual 8 не матчатся.
+        try:
+            th = get_theme_colors()
+            border_color = th["fill_bg"] if get_theme_name() == "nanita" else th["frame_color"]
+            self.query_one(".th-panel", Container).styles.border = ("heavy", border_color)
+        except Exception:
+            pass
 
     def action_cancel(self) -> None:
         self.dismiss(None)
@@ -264,10 +285,7 @@ class VarekaiApp(App):
         scrollbar-size: 1 1;
         scrollbar-gutter: stable;  /* место под скроллбар всегда занято */
         scrollbar-background: $panel;  /* = фон панели: поле справа как отступ слева */
-        /* Ползунок в цвет фона лога: никаких глифов скроллбара ни на
-        одной консоли (в т.ч. conhost), симметрия отступов сохраняется. */
-        scrollbar-color: $surface;
-        scrollbar-color-active: $surface;
+        /* Цвета ползунка — инлайн из палитры кнопок групп (см. ниже) */
     }
 
     #label_group { width: 100%; text-align: center; margin: 0 0; }
@@ -292,6 +310,10 @@ class VarekaiApp(App):
         background: #F0C60A;
         color: #1a1a1a;
     }
+    /* Blue Spruce: селектор ноды внутри группы — на 25% светлее
+       основного цвета кнопок (#005467 -> #407F8D) */
+    .th-blue_fir SelectCurrent { background: #407F8D; }
+    .th-blue_fir SelectCurrent:focus { background: #407F8D; }
 
     SelectOverlay {
         border: double #F0C60A;
@@ -348,8 +370,7 @@ class VarekaiApp(App):
         scrollbar-size: 1 1;
         scrollbar-gutter: stable;  /* скроллбар не появляется/не прячется при ресайзе */
         scrollbar-background: $panel;
-        scrollbar-color: $primary;
-        scrollbar-color-active: $warning;
+        /* Цвета ползунка — инлайн из палитры кнопок групп (см. ниже) */
     }
     .groups-title-row { width: 100%; height: 3; margin: 0 0 1 0; }
     #groups_title {
@@ -387,18 +408,42 @@ class VarekaiApp(App):
     /* Кнопки групп: без фиксации высоты класс btn-action растягивал
        кнопку на всю раскрытую группу */
     #groups_scroll .group-btn { height: 2; width: 100%; }
+    /* Фон кнопок групп — per-theme screen-CSS: механизм с самым высоким
+       приоритетом надёжности в Textual 8 (см. брифинг). Дублирует
+       GroupRow.on_mount и _apply_base — хоть один да сработает */
+    .th-varekai GroupRow FlatButton { background: #fccf44; }
+    .th-nanita GroupRow FlatButton { background: #79818C; }
+    .th-geek_green GroupRow FlatButton { background: #033C1E; }
+    .th-blue_fir GroupRow FlatButton { background: #005467; }
+    .th-monokai GroupRow FlatButton { background: #3F3309; }
+    .th-ikigai GroupRow FlatButton { background: #BD93F9; }
     /* Кнопки выбора тем: фон ЧЕРЕЗ CSS (инлайн глушил :hover) */
     .thbtn-varekai { background: #fccf44; }
-    .thbtn-black_on_white { background: #FFFFFF; }
-    .thbtn-meshtastic { background: #033C1E; }
-    .thbtn-nicedark { background: #7B7BFF; }
+    .thbtn-nanita { background: #FFFFFF; }
+    .thbtn-geek_green { background: #033C1E; }
+    .thbtn-blue_fir { background: #174a59; }
     .thbtn-monokai { background: #3F3309; }
     .thbtn-ikigai { background: #BD93F9; }
-    /* Ч/б: рамки всех окон — серые (мягче чистого чёрного) */
-    .th-black_on_white .panel,
-    .th-black_on_white #log_frame,
-    .th-black_on_white #nodes_frame {
+    /* Nanita (бывш. ч/б): рамки всех окон — серые (мягче чистого чёрного) */
+    .th-nanita .panel,
+    .th-nanita #log_frame,
+    .th-nanita #nodes_frame,
+    .th-nanita .quit-panel {
         border: heavy #aeaeae;
+    }
+    /* Blue Fir: рамки окон — бирюзовые (основной заливки) */
+    .th-blue_fir .panel,
+    .th-blue_fir #log_frame,
+    .th-blue_fir #nodes_frame,
+    .th-blue_fir .quit-panel {
+        border: heavy #349da8;
+    }
+    /* Monokai: рамки окон — жёлтые, как текст основных кнопок */
+    .th-monokai .panel,
+    .th-monokai #log_frame,
+    .th-monokai #nodes_frame,
+    .th-monokai .quit-panel {
+        border: heavy #FCD13A;
     }
     """
 
@@ -442,15 +487,18 @@ class VarekaiApp(App):
         return self._btn_caption(t("key_connections"), "\U0001F310")
 
     def _footer_text(self) -> str:
-        kc = get_theme_colors().get("key_text") or get_theme_colors()["tech_text"]
+        th = get_theme_colors()
+        kc = th.get("key_text") or th["tech_text"]
+        # Подсказки — отдельный ключ (у blue_fir они белые, клавиши оранжевые)
+        hc = th.get("hint_text") or kc
         return (
-            f"[bold][bold {kc}]S[/] {t('key_toggle')}    "
-            f"[bold {kc}]C[/] {t('key_connections')}    "
-            f"[bold {kc}]PgUp/PgDn[/] {t('key_log_scroll')}    "
-            f"[bold {kc}]L[/] {t('key_lang')}    "
-            f"[bold {kc}]R[/] {t('key_rollback')}    "
-            f"[bold {kc}]T[/] {t('key_theme')}    "
-            f"[bold {kc}]Q[/] {t('key_quit')}[/]"
+            f"[bold][bold {kc}]S[/] - [bold {hc}]{t('key_toggle')}[/]    "
+            f"[bold {kc}]C[/] - [bold {hc}]{t('key_connections')}[/]    "
+            f"[bold {kc}]PgUp/PgDn[/] - [bold {hc}]{t('key_log_scroll')}[/]    "
+            f"[bold {kc}]L[/] - [bold {hc}]{t('key_lang')}[/]    "
+            f"[bold {kc}]R[/] - [bold {hc}]{t('key_rollback')}[/]    "
+            f"[bold {kc}]T[/] - [bold {hc}]{t('key_theme')}[/]    "
+            f"[bold {kc}]Q[/] - [bold {hc}]{t('key_quit')}[/][/]"
         )
 
     def compose(self) -> ComposeResult:
@@ -512,7 +560,6 @@ class VarekaiApp(App):
         self.set_interval(2.0, self.poll_proxies)
         self._register_themes()
         self._apply_theme(get_theme_name(), save=False)
-        self._hovered_widget = None
         self._sel_node = None  # выделенная кликом строка ноды: (group, key)
 
     def update_status(self):
@@ -653,53 +700,6 @@ class VarekaiApp(App):
         self._update_ui_texts()
         self.brief_log(t("brief_lang_changed", lang=new_lang))
 
-    def on_mouse_move(self, event) -> None:
-        """Hover для кнопок (FlatButton): Enter/Leave в Textual 8 не доходят
-        до виджетов внутри скроллов и модалок — подсветку кнопок ведём
-        инлайн по позиции курсора. Строки нод hover не используют:
-        их выделение — по клику, как в таблице соединений.
-        API поиска виджета под курсором в v8 мог быть переименован —
-        перебираем варианты с однократной диагностикой."""
-        self._update_hover(event.screen_x, event.screen_y)
-
-    def _update_hover(self, x, y) -> None:
-        """Пересчёт hover кнопок по координатам экрана (тело трекера)."""
-        screen = self.screen
-        getter = getattr(screen, "get_widget_at", None) or getattr(screen, "widget_at", None)
-        if getter is None:
-            if not getattr(self, "_hover_api_warned", False):
-                self._hover_api_warned = True
-                self.brief_log("hover: API get_widget_at не найден")
-            return
-        try:
-            result = getter(x, y)
-        except TypeError:
-            try:
-                result = getter(int(x), int(y))
-            except Exception:
-                return
-        except Exception:
-            return
-        widget = result[0] if isinstance(result, tuple) else result
-        while widget is not None and not (
-            isinstance(widget, _BoldText) and widget.has_class(*_BoldText.HOVER_CLASSES)
-        ):
-            widget = getattr(widget, "parent", None)
-        if widget is self._hovered_widget:
-            return
-        old = self._hovered_widget
-        self._hovered_widget = widget
-        if isinstance(old, _BoldText):
-            try:
-                old._apply_leave()
-            except Exception:
-                pass
-        if isinstance(widget, _BoldText):
-            try:
-                widget._apply_enter()
-            except Exception:
-                pass
-
     def _register_themes(self) -> bool:
         try:
             from textual.theme import Theme
@@ -764,14 +764,33 @@ class VarekaiApp(App):
                 self.query_one(wid).styles.background = th["tech_bg"]
             except Exception:
                 pass
-        # Фон лога — чуть светлее заливки: прежний «фокусный» оттенок
-        # теперь постоянный, щелчок по логу ничего не меняет (инлайн
-        # перебивает любой focus-CSS)
+        # Заливка экрана и панелей — инлайн: токены $background/$panel
+        # при переключении темы в Textual 8 обновляются ненадёжно (та же
+        # семья глюков, что и с $surface), поэтому фиксируем из палитры
         try:
-            self.query_one("#brief_log").styles.background = th["log_bg"]
+            self.screen.styles.background = th["fill_bg"]
         except Exception:
             pass
-        # Подписи кнопок с инлайн-цветом — ресинхрон под новую палитру
+        for pan in self.query(".panel"):
+            try:
+                pan.styles.background = th["panel_bg"]
+            except Exception:
+                pass
+        # Лог, список нод и таблица соединений — ЕДИНЫЙ tech_bg; текст
+        # в них — tech_text. Инлайн: токены $background/$surface при
+        # смене темы залипают. Скроллбары — палитра кнопок групп.
+        try:
+            log = self.query_one("#brief_log")
+            log.styles.background = th["tech_bg"]
+            log.styles.color = th["tech_text"]
+        except Exception:
+            pass
+        for wid in ("#brief_log", "#groups_scroll"):
+            try:
+                apply_scrollbar_palette(self.query_one(wid))
+            except Exception:
+                pass
+        # Подписи кнопок — ресинхрон под новую палитру
         for widget in self.query(_BoldText):
             try:
                 widget._sync_bold_text()

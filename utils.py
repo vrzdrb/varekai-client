@@ -92,70 +92,114 @@ DEFAULT_MIRRORS = [
 DEFAULT_SETTINGS = {"language": "ru", "theme": "ikigai"}
 
 # === ТЕМЫ ОФОРМЛЕНИЯ ===
-# Пары: кнопки (bg/text/hover), окна тех. информации (bg/text),
-# заливка (фон экрана/панелей, плашки шапки-футера, текст заголовков).
-# Рамки наследуют цвет кнопок. Статусная строка VPN не темится.
 THEMES = {
     # Имя НЕ «default»: оно служебное в Textual (self.theme = "default"
     # включает встроенную тему и игнорирует зарегистрированную).
+    # Ключи: кнопки (button_*), кнопки групп (group_bg/group_text),
+    # выделение строк по клику (select_bg), тех. окна (tech_*): tech_bg —
+    # ЕДИНЫЙ фон списка нод, окна лога и таблицы соединений; tech_text —
+    # текст строк нод/таблицы/лога. Заливка (fill_* — экран/панели/шапка-
+    # футер), подсказки хоткеев (hint_text). Рамки наследуют цвет кнопок;
+    # у nanita/blue_fir/monokai переопределены классом .th-<имя>.
+    # modal_bg — фон модальных окон (откат/выход; у nanita — серый
+    # tech_bg, как фон тех. окон, у остальных = panel_bg);
+    # modal_text — текст на этом фоне (у nanita — чёрный tech_text).
+    # Статусная строка VPN не темится.
     "varekai": {
+        "modal_text": "#ffffff",
+        "frame_color": "#fccf44",  # цвет рамок окон темы
+        "rollback_title": "#fccf44",  # заголовок окна выбора ядра
+        "rollback_item": "#ffffff",  # строки версий в окне выбора ядра
+        "modal_bg": "#2C2936",
         "label": {"ru": "Varekai", "en": "Varekai"},
         "key_text": "#fccf44",
         "button_bg": "#fccf44", "button_text": "#1a1a1a", "button_hover": "#FCDB73",
+        "group_bg": "#fccf44", "group_text": "#1a1a1a",
+        "select_bg": "#FDDB73", "select_text": "#1a1a1a",
         "tech_bg": "#2C2936", "tech_text": "#ffffff",
-        "log_bg": "#34313E",
         "fill_bg": "#2C2936", "panel_bg": "#2C2936", "bar_bg": "#2C2936",
-        "fill_text": "#ffffff",
+        "fill_text": "#ffffff", "hint_text": "#FFFFFF",
         "log_ok": "#34C421", "log_err": "#F50A0A",
     },
-    "black_on_white": {
-        "label": {"ru": "Чёрное на белом", "en": "Black on white"},
-        "key_text": "#000000",
+    "nanita": {
+        "modal_text": "#000000",
+        "frame_color": "#aeaeae",  # цвет рамок окон темы
+        "rollback_title": "#000000",  # заголовок окна выбора ядра
+        "rollback_item": "#000000",  # строки версий в окне выбора ядра
+        "modal_bg": "#DCDCDC",
+        "label": {"ru": "Nanita", "en": "Nanita"},
+        "key_text": "#FFFFFF",
         "button_bg": "#FFFFFF", "button_text": "#000000", "button_hover": "#c0c0c0", "button_hover_text": "#000000",
+        "group_bg": "#79818C", "group_text": "#FFFFFF",
+        "select_bg": "#313d4e", "select_text": "#FFFFFF",
         "tech_bg": "#DCDCDC", "tech_text": "#000000",
-        "log_bg": "#E4E4E4",
-        "fill_bg": "#DCDCDC", "panel_bg": "#DCDCDC", "bar_bg": "#FFFFFF",
-        "fill_text": "#000000",
+        "fill_bg": "#313d4e", "panel_bg": "#313d4e", "bar_bg": "#313d4e",
+        "fill_text": "#FFFFFF", "hint_text": "#83AE63",
         "log_ok": "#4D4D00", "log_err": "#B00000",
     },
-    "meshtastic": {
-        "label": {"ru": "Meshtastic", "en": "Meshtastic"},
+    "geek_green": {
+        "modal_text": "#0cf07a",
+        "frame_color": "#033C1E",  # цвет рамок окон темы
+        "rollback_title": "#0cf07a",  # заголовок окна выбора ядра
+        "rollback_item": "#0cf07a",  # строки версий в окне выбора ядра
+        "modal_bg": "#000000",
+        "label": {"ru": "Geek Green", "en": "Geek Green"},
         "key_text": "#0cf07a",
         "button_bg": "#033C1E", "button_text": "#0cf07a", "button_hover": "#0A6337",
+        "group_bg": "#033C1E", "group_text": "#0cf07a",
+        "select_bg": "#426D56", "select_text": "#0cf07a",
         "tech_bg": "#000000", "tech_text": "#0cf07a",
-        "log_bg": "#171717",
         "fill_bg": "#000000", "panel_bg": "#000000", "bar_bg": "#033C1E",
-        "fill_text": "#0cf07a",
+        "fill_text": "#0cf07a", "hint_text": "#FFFFFF",
         "log_ok": "#34C421", "log_err": "#F50A0A",
     },
-    "nicedark": {
-        "label": {"ru": "Nicedark", "en": "Nicedark"},
-        "key_text": "#8C8CFF",
-        "button_bg": "#7B7BFF", "button_text": "#101024", "button_hover": "#AFAFFF",
-        "tech_bg": "#14142B", "tech_text": "#8DFFC9",
-        "log_bg": "#242440",
-        "fill_bg": "#1C1C38", "panel_bg": "#1C1C38", "bar_bg": "#26264A",
-        "fill_text": "#E8E8FF",
+    "blue_fir": {
+        "modal_text": "#F6C884",
+        "frame_color": "#349da8",  # цвет рамок окон темы
+        "rollback_title": "#F6C884",  # заголовок окна выбора ядра
+        "rollback_item": "#FFFFFF",  # строки версий в окне выбора ядра
+        "modal_bg": "#313d4e",
+        "label": {"ru": "Голубая Ель", "en": "Blue Spruce"},
+        "key_text": "#F6C884",
+        "button_bg": "#005467", "button_text": "#F6C884", "button_hover": "#407F8D",  # на 25% светлее button_bg (#005467)
+        "group_bg": "#005467",
+        "group_text": "#F6C884",
+        "select_bg": "#313d4e", "select_text": "#F6C884",
+        "tech_bg": "#202833", "tech_text": "#FFFFFF",
+        "fill_bg": "#313d4e", "panel_bg": "#313d4e", "bar_bg": "#313d4e",
+        "fill_text": "#F6C884", "hint_text": "#FFFFFF",
         "log_ok": "#34C421", "log_err": "#F50A0A",
     },
     "monokai": {
+        "modal_text": "#F8F8F2",
+        "frame_color": "#FCD13A",  # цвет рамок окон темы
+        "rollback_title": "#F8F8F2",  # заголовок окна выбора ядра
+        "rollback_item": "#FCD13A",  # строки версий в окне выбора ядра
+        "modal_bg": "#291C12",
         "label": {"ru": "Monokai", "en": "Monokai"},
         "key_text": "#FCD13A",
         "button_bg": "#3F3309", "button_text": "#FCD13A", "button_hover": "#6E5A12",
+        "group_bg": "#3F3309", "group_text": "#FCD13A",
+        "select_bg": "#6F6646", "select_text": "#FCD13A",
         "tech_bg": "#291C12", "tech_text": "#ffffff",
-        "log_bg": "#31241A",
         "fill_bg": "#291C12", "panel_bg": "#291C12", "bar_bg": "#1A110A",
-        "fill_text": "#F8F8F2",
+        "fill_text": "#F8F8F2", "hint_text": "#FFFFFF",
         "log_ok": "#34C421", "log_err": "#F50A0A",
     },
     "ikigai": {
+        "modal_text": "#F8F8F2",
+        "frame_color": "#BD93F9",  # цвет рамок окон темы
+        "rollback_title": "#F8F8F2",  # заголовок окна выбора ядра
+        "rollback_item": "#8BE9FD",  # строки версий в окне выбора ядра
+        "modal_bg": "#282A36",
         "label": {"ru": "Ikigai", "en": "Ikigai"},
         "key_text": "#8BE9FD",
         "button_bg": "#BD93F9", "button_text": "#282A36", "button_hover": "#D0BFFF",
-        "tech_bg": "#21222C", "tech_text": "#8BE9FD",
-        "log_bg": "#30323E",
+        "group_bg": "#BD93F9", "group_text": "#282A36",
+        "select_bg": "#CEAEFA", "select_text": "#282A36",
+        "tech_bg": "#30323E", "tech_text": "#8BE9FD",
         "fill_bg": "#282A36", "panel_bg": "#282A36", "bar_bg": "#34354A",
-        "fill_text": "#F8F8F2",
+        "fill_text": "#F8F8F2", "hint_text": "#FFFFFF",
         "log_ok": "#34C421", "log_err": "#F50A0A",
     },
 }
@@ -168,8 +212,14 @@ def get_theme_name():
                 name = json.load(f).get("theme", "ikigai")
                 if name == "default":
                     name = "varekai"  # старое служебное имя
-                elif name == "dracula":
-                    name = "ikigai"  # тема переименована
+                elif name in ("dracula", "black_on_white", "meshtastic", "nicedark"):
+                    # темы переименованы: старые ключи из settings.json читаем
+                    name = {
+                        "dracula": "ikigai",
+                        "black_on_white": "nanita",
+                        "meshtastic": "geek_green",
+                        "nicedark": "blue_fir",
+                    }[name]
                 return name if name in THEMES else "ikigai"
     except Exception:
         pass
@@ -673,6 +723,20 @@ def copy_to_clipboard(text: str) -> bool:
         return True
     except Exception:
         return False
+
+
+def apply_scrollbar_palette(widget) -> None:
+    """Ползунки скроллбара — по палитре кнопок групп: фон ползунка =
+    group_bg, hover/перетаскивание = group_text. Единая точка для всех
+    скроллов (лог, группы, соединения, откат) — инлайн, т.к. токены
+    $primary/$warning при смене темы залипают."""
+    th = get_theme_colors()
+    try:
+        widget.styles.scrollbar_color = th["group_bg"]
+        widget.styles.scrollbar_color_hover = th["group_text"]
+        widget.styles.scrollbar_color_active = th["group_text"]
+    except Exception:
+        pass
 
 
 def setup_console():

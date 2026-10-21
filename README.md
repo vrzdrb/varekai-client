@@ -14,6 +14,7 @@ Maximum simplicity for everyone.
 - Runs the VPN only in TUN mode (requires admin/root)
 - Keeps the last 3 core versions and can roll back
 - The core runs independently: closing the launcher does not stop the VPN
+- 6 decoration themes
 - Russian and English languages
 - Supports mouse control 
 

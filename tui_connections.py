@@ -12,8 +12,8 @@ from textual.screen import ModalScreen
 from textual.widgets import Static
 
 from clash_api import ClashAPI
-from tui_widgets import ConnectionRow, fmt_bytes, fmt_speed
-from utils import get_os, replace_flag_emojis, t
+from tui_widgets import CloseAllCell, ConnectionRow, HeaderCell, fmt_bytes, fmt_speed
+from utils import apply_scrollbar_palette, get_os, replace_flag_emojis, t
 
 CONN_POLL_INTERVAL = 0.2  # 5 раз в секунду
 
@@ -36,8 +36,12 @@ class ConnectionsScreen(ModalScreen):
         color: $accent;
         padding: 0 1;
     }
-    /* Ч/б: рамка окна соединений — серая */
-    .th-black_on_white .conn-panel { border: heavy #aeaeae; }
+    /* Nanita (бывш. ч/б): рамка окна соединений — серая */
+    .th-nanita .conn-panel { border: heavy #aeaeae; }
+    /* Blue Fir: рамка окна соединений — бирюзовая */
+    .th-blue_fir .conn-panel { border: heavy #349da8; }
+    /* Monokai: рамка окна соединений — жёлтая */
+    .th-monokai .conn-panel { border: heavy #FCD13A; }
     .conn-head {
         layout: horizontal;
         height: 1;
@@ -92,8 +96,7 @@ class ConnectionsScreen(ModalScreen):
         scrollbar-size: 1 1;
         scrollbar-gutter: stable;
         scrollbar-background: $panel;
-        scrollbar-color: $primary;
-        scrollbar-color-active: $warning;
+        /* Цвета ползунка — инлайн из палитры кнопок групп (on_mount) */
     }
     #conn_empty {
         width: 100%; text-align: center;
@@ -129,42 +132,65 @@ class ConnectionsScreen(ModalScreen):
 
     def _conn_footer_text(self) -> str:
         from utils import get_theme_colors
-        kc = get_theme_colors()["tech_text"]  # буква клавиши — цвет темы
-        return f"[bold]   [bold {kc}]C[/] {t('key_close_conn')}[/]"
+        th = get_theme_colors()
+        kc = th.get("key_text") or th["tech_text"]  # буква клавиши — цвет темы
+        hc = th.get("hint_text") or kc
+        # Esc — тоже закрывает окно (binding на экране), показываем оба
+        return f"[bold]   [bold {kc}]Esc, C[/] - [bold {hc}]{t('key_close_conn')}[/]"
 
     def compose(self) -> ComposeResult:
         with Container(classes="conn-panel"):
             with Horizontal(classes="conn-head"):
                 yield Static(t("conn_title"), classes="conn-title")
             with Horizontal(classes="conn-header"):
-                yield Static(t("col_domain"), id="hdr_domain", classes="header-cell col-domain")
+                yield HeaderCell(t("col_domain"), id="hdr_domain", classes="header-cell col-domain")
                 yield Static("|", classes="col-sep")
-                yield Static(t("col_sport"), id="hdr_sport", classes="header-cell col-sport")
+                yield HeaderCell(t("col_sport"), id="hdr_sport", classes="header-cell col-sport")
                 yield Static("|", classes="col-sep")
-                yield Static(t("col_dport"), id="hdr_dport", classes="header-cell col-dport")
+                yield HeaderCell(t("col_dport"), id="hdr_dport", classes="header-cell col-dport")
                 yield Static("|", classes="col-sep")
-                yield Static(t("col_server"), id="hdr_server", classes="header-cell col-server")
+                yield HeaderCell(t("col_server"), id="hdr_server", classes="header-cell col-server")
                 yield Static("|", classes="col-sep")
-                yield Static(t("col_rule"), id="hdr_rule", classes="header-cell col-rule")
+                yield HeaderCell(t("col_rule"), id="hdr_rule", classes="header-cell col-rule")
                 yield Static("|", classes="col-sep")
-                yield Static(t("col_dspeed"), id="hdr_ds", classes="header-cell col-ds")
+                yield HeaderCell(t("col_dspeed"), id="hdr_ds", classes="header-cell col-ds")
                 yield Static("|", classes="col-sep")
-                yield Static(t("col_dtotal"), id="hdr_dt", classes="header-cell col-dt")
+                yield HeaderCell(t("col_dtotal"), id="hdr_dt", classes="header-cell col-dt")
                 yield Static("|", classes="col-sep")
-                yield Static(t("col_uspeed"), id="hdr_us", classes="header-cell col-us")
+                yield HeaderCell(t("col_uspeed"), id="hdr_us", classes="header-cell col-us")
                 yield Static("|", classes="col-sep")
-                yield Static(t("col_utotal"), id="hdr_ut", classes="header-cell col-ut")
+                yield HeaderCell(t("col_utotal"), id="hdr_ut", classes="header-cell col-ut")
                 yield Static("|", classes="col-sep")
-                yield Static(Text("[X]"), id="hdr_close", classes="col-act")
+                yield CloseAllCell(Text("[X]"), id="hdr_close", classes="col-act")
             with VerticalScroll(id="conn_scroll") as scroll:
                 self._scroll = scroll
             yield Static(t("conn_empty"), id="conn_empty")
         yield Static(self._conn_footer_text(), id="conn_footer_bar")
 
     def on_mount(self) -> None:
-        from utils import get_theme_name
+        from utils import get_theme_colors, get_theme_name
         try:
             self.add_class(f"th-{get_theme_name()}")
+        except Exception:
+            pass
+        # Фон окна = заливка основного экрана, фон таблицы — tech_bg
+        # (единый со списком нод и окном лога). Токены при смене темы
+        # залипают — поэтому инлайн, как на главном экране
+        try:
+            th = get_theme_colors()
+            self.query_one(".conn-panel").styles.background = th["fill_bg"]
+            self.query_one("#conn_scroll").styles.background = th["tech_bg"]
+            # Токен $accent в Textual 8 залипает не белым — фиксируем инлайн:
+            # заголовок = tech_text (в blue fir — белый)
+            self.query_one(".conn-title", Static).styles.color = th["tech_text"]
+        except Exception:
+            pass
+        # Заголовки колонок красятся сами (HeaderCell.on_mount: цвета
+        # основных кнопок, hover — как у кнопок, через трекер курсора)
+        apply_scrollbar_palette(self.query_one("#conn_scroll"))
+        # Строка футера — того же цвета, что в основном окне (bar_bg)
+        try:
+            self.query_one("#conn_footer_bar").styles.background = get_theme_colors()["bar_bg"]
         except Exception:
             pass
         self._empty = self.query_one("#conn_empty", Static)

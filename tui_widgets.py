@@ -2,6 +2,8 @@
 Общие helper-функции форматирования и переиспользуемые виджеты TUI.
 """
 import re
+import time
+from pathlib import Path
 
 from rich.segment import Segment
 from rich.style import Style
@@ -85,7 +87,10 @@ class _BoldText(Static):
     def _apply_leave(self) -> None:
         if self.has_class(*self.HOVER_CLASSES):
             th = get_theme_colors()
-            self.styles.background = th["button_bg"]
+            # Кнопки групп возвращаются на group_bg: у blue_fir он светлее
+            # button_bg, у nanita серый; в остальных темах они равны.
+            base = th["group_bg"] if self.has_class("group-btn") else th["button_bg"]
+            self.styles.background = base
             self._sync_bold_text()
 
     def _set_hover(self, hovered: bool) -> None:
@@ -99,7 +104,10 @@ class _BoldText(Static):
     def _sync_bold_text(self, color: str = "") -> None:
         text = self._bold_text
         plain = text.plain if isinstance(text, Text) else str(text)
-        color = color or self._color or get_theme_colors()["button_text"]
+        th = get_theme_colors()
+        # Кнопки групп читают group_text (nanita — белый), прочие — button_text
+        base_text = th["group_text"] if self.has_class("group-btn") else th["button_text"]
+        color = color or self._color or base_text
         self.update(Text(plain, style=f"bold {color}"))
 
     def update_text(self, content) -> None:
@@ -112,6 +120,8 @@ class _BoldText(Static):
 
 class BoldLabel(_BoldText):
     """Однострочная подпись с гарантированно жирным текстом."""
+class BoldLabel(_BoldText):
+    """Однострочная подпись с гарантированно жирным текстом."""
 
 
 class FlatButton(_BoldText):
@@ -122,6 +132,59 @@ class FlatButton(_BoldText):
         if self.disabled:
             return
         self.post_message(Button.Pressed(self))
+
+
+class HeaderCell(Static):
+    """Заголовок колонки таблицы соединений. Базовые цвета — как у
+    основных кнопок (button_bg/button_text), под курсором — button_hover,
+    ровно как _BoldText-кнопки. Hover обеспечивает трекер курсора
+    приложения (маркер-класс hv-track): Enter/Leave в Textual 8 в
+    модальные окна не доходят, а CSS :hover на этих сборках не срабатывает.
+    Цвета читаются из ЖИВОЙ палитры — при смене темы клетки не залипают."""
+
+    def __init__(self, content="", **kwargs):
+        super().__init__(content, **kwargs)
+        self.add_class("hv-track")
+        self._hovered = False
+
+    def on_mount(self) -> None:
+        self._apply_base()
+
+    def on_enter(self, event) -> None:
+        self._hv_enter()
+
+    def on_leave(self, event) -> None:
+        self._hv_leave()
+
+    def _apply_base(self) -> None:
+        th = get_theme_colors()
+        self.styles.background = th["button_bg"]
+        self.styles.color = th["button_text"]
+
+    def _hv_enter(self) -> None:
+        self._hovered = True
+        th = get_theme_colors()
+        self.styles.background = th["button_hover"]
+        self.styles.color = th.get("button_hover_text") or th["button_text"]
+
+    def _hv_leave(self) -> None:
+        self._hovered = False
+        self._apply_base()
+
+
+class CloseAllCell(HeaderCell):
+    """Красная [X] «прервать все» в шапке таблицы соединений: hover
+    светлеет, как у основных кнопок (своя пара красных, как раньше)."""
+
+    def _apply_base(self) -> None:
+        self.styles.background = "#F50A0A"
+        self.styles.color = get_theme_colors()["button_text"]
+
+    def _hv_enter(self) -> None:
+        self.styles.background = "#ff4444"
+
+    def _hv_leave(self) -> None:
+        self._apply_base()
 
 
 class _NodeCell(Static):
@@ -141,10 +204,8 @@ class NodeRow(Widget):
         width: 100%;
     }
     NodeRow Static { color: $accent; }
-    NodeRow.current { background: $primary; }
-    NodeRow.current Static { color: $secondary !important; }
-    /* Выделение кликом — как ConnectionRow.selected: фон из класса,
-       цвета текста инлайн в _apply_state */
+    /* Цвета выделения (current И selected) задаёт только инлайн
+       _apply_state — из select_bg/select_text палитры. */
     NodeRow.selected { background: $primary; }
     NodeRow .node-name { width: 1fr; text-align: left; }
     NodeRow .node-delay { width: 10; text-align: center; }
@@ -182,11 +243,16 @@ class NodeRow(Widget):
             pass
 
     def _apply_state(self) -> None:
-        """Цвета ячеек под состояние выделения — зеркалит ConnectionRow:
-        фон даёт класс selected из CSS, инлайн только цвет текста."""
-        active = "selected" in self.classes
+        """Цвета под состояние выделения — зеркалит ConnectionRow.
+        Текущая нода (current, «[+]») и кликнутая (selected) рисуются
+        ОДНИМИ цветами выделения: select_bg/select_text."""
+        active = "selected" in self.classes or "current" in self.classes
         th = get_theme_colors()
-        text_color = th["button_text"] if active else th["tech_text"]
+        if active:
+            self.styles.background = th["select_bg"]
+        else:
+            self.styles.background = "transparent"
+        text_color = (th.get("select_text") or th["button_text"]) if active else th["tech_text"]
         for cls in ("node-name", "node-delay", "node-status"):
             try:
                 self.query_one(f".{cls}", Static).styles.color = text_color
@@ -207,6 +273,9 @@ class NodeRow(Widget):
             name = replace_flag_emojis(self._name)
             display = f"[+] {name}" if current else name
             self.query_one(".node-name", Static).update(Text(display))
+            # Фон инлайн (_apply_state): когда current уходит со строки,
+            # без resync на ней оставался бы цвет «бывшей текущей»
+            self._apply_state()
         except Exception:
             pass
 
@@ -250,7 +319,8 @@ class GroupRow(Widget):
         yield FlatButton(Text(self._label), id=self._button_id, classes="group-btn btn-action")
 
     def update_label(self, label: str) -> None:
-        """Обновить подпись кнопки без пересборки (антимерцание)."""
+        """Обновить подпись кнопки без пересборки (антимерцание).
+        Только текст — фон не трогаем (иначе гасит hover)."""
         self._label = label
         try:
             self.query_one(FlatButton).update_text(Text(label))
@@ -281,8 +351,10 @@ class ConnectionRow(Widget):
         CSS-каскада (ID-правила экрана перебивают классовые)."""
         active = "selected" in self.classes
         th = get_theme_colors()
-        text_color = th["button_text"] if active else th["tech_text"]
-        sep_color = th["button_text"] if active else th["button_bg"]
+        # Фон выделения — select_bg палитры (у nanita он свой, зелёный)
+        self.styles.background = th["select_bg"] if active else "transparent"
+        text_color = (th.get("select_text") or th["button_text"]) if active else th["tech_text"]
+        sep_color = text_color
         for st in self._cells.values():
             st.styles.color = text_color
         for sep in self.query("Static.col-sep"):
