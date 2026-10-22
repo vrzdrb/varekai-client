@@ -65,7 +65,7 @@ def _lc(ok: bool) -> str:
 
 AUTO_RESET = "__AUTO_RESET__"
 NO_CONN = "__NO_CONN__"
-UI_REV = "gr70"  # маркер сборки интерфейса (для проверки, какой код реально запущен)
+UI_REV = "gr71"  # маркер сборки интерфейса (для проверки, какой код реально запущен)
 
 class QuitScreen(ModalScreen):
     """Подтверждение выхода при работающем VPN: Да — выйти, оставив VPN;
@@ -117,7 +117,6 @@ class QuitScreen(ModalScreen):
         # Фон/текст — из палитры, как у панелей основного окна.
         try:
             self.add_class(f"th-{get_theme_name()}")
-            th = get_theme_colors()
             # Фон/рамка/текст — из общего chrome модальных окон
             chrome = get_modal_chrome()
             panel = self.query_one(".quit-panel", Container)
