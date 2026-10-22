@@ -91,14 +91,6 @@ class _BoldText(Static):
             self.styles.background = base
             self._sync_bold_text()
 
-    def _set_hover(self, hovered: bool) -> None:
-        """Hover-фон жёлтых кнопок: inline-стили, т.к. CSS :hover на
-        родителе не срабатывает, когда курсор над дочерним Static."""
-        if self.has_class("btn-action", "btn-lang", "btn-ping", "quit-btn",
-                          "group-btn", "th-btn"):
-            th = get_theme_colors()
-            self.styles.background = th["button_hover"] if hovered else th["button_bg"]
-
     def _sync_bold_text(self, color: str = "") -> None:
         text = self._bold_text
         plain = text.plain if isinstance(text, Text) else str(text)

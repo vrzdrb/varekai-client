@@ -46,6 +46,7 @@ from utils import (
     apply_scrollbar_palette,
     format_group_name,
     get_language,
+    get_modal_chrome,
     get_os,
     get_theme_colors,
     get_theme_name,
@@ -64,7 +65,7 @@ def _lc(ok: bool) -> str:
 
 AUTO_RESET = "__AUTO_RESET__"
 NO_CONN = "__NO_CONN__"
-UI_REV = "gr67"  # маркер сборки интерфейса (для проверки, какой код реально запущен)
+UI_REV = "gr70"  # маркер сборки интерфейса (для проверки, какой код реально запущен)
 
 class QuitScreen(ModalScreen):
     """Подтверждение выхода при работающем VPN: Да — выйти, оставив VPN;
@@ -117,14 +118,12 @@ class QuitScreen(ModalScreen):
         try:
             self.add_class(f"th-{get_theme_name()}")
             th = get_theme_colors()
+            # Фон/рамка/текст — из общего chrome модальных окон
+            chrome = get_modal_chrome()
             panel = self.query_one(".quit-panel", Container)
-            panel.styles.background = th["modal_bg"]
-            # Nanita: рамка диалога — чёрная (инлайн: per-theme CSS на
-            # модалках в Textual 8 не матчатся)
-            if get_theme_name() == "nanita":
-                panel.styles.border = ("heavy", "#000000")
-            # Текст вопроса — modal_text: у nanita чёрный на сером фоне
-            self.query_one(".quit-text", Static).styles.color = th["modal_text"]
+            panel.styles.background = chrome["bg"]
+            panel.styles.border = ("heavy", chrome["border"])
+            self.query_one(".quit-text", Static).styles.color = chrome["text"]
         except Exception:
             pass
 
@@ -181,15 +180,22 @@ class ThemesScreen(ModalScreen):
                 )
 
     def on_mount(self) -> None:
-        # Рамка: frame_color (blue_fir #349da8, monokai #FCD13A),
-        # nanita — белая (button_bg). Инлайн: per-theme CSS на модалках
-        # в Textual 8 не матчатся.
+        # Фон/рамка — из общего chrome модальных окон (инлайн: per-theme
+        # CSS на модалках в Textual 8 не матчатся)
         try:
-            th = get_theme_colors()
-            border_color = th["button_bg"] if get_theme_name() == "nanita" else th["frame_color"]
-            self.query_one(".th-panel", Container).styles.border = ("heavy", border_color)
+            chrome = get_modal_chrome()
+            panel = self.query_one(".th-panel", Container)
+            panel.styles.background = chrome["bg"]
+            panel.styles.border = ("heavy", chrome["border"])
         except Exception:
             pass
+        # Nanita: заголовок окна — чёрный (CSS-цвет $foreground белый,
+        # на светлом фоне не читается)
+        if get_theme_name() == "nanita":
+            try:
+                self.query_one(".th-title", Static).styles.color = "#000000"
+            except Exception:
+                pass
 
     def action_cancel(self) -> None:
         self.dismiss(None)
@@ -343,23 +349,7 @@ class VarekaiApp(App):
     }
 
     #groups_scroll NodeRow Static { color: $accent; }
-    NodeRow.current, NodeRow.current Static {
-        color: $secondary !important;
-    }
 
-    .node-header {
-        layout: horizontal;
-        height: 1;
-        width: 100%;
-        background: #5a4280;
-    }
-    .node-header Static { color: $foreground; text-style: bold; text-align: center; }
-    /* «Задержка» — кликабельная кнопка теста пинга, стиль как у кнопок */
-    #hdr_node_delay { background: #F0C60A; color: #1a1a1a; }
-    #hdr_node_delay:hover { background: #f5d020; }
-    .node-header .node-name { width: 1fr; }
-    .node-header .node-delay { width: 10; }
-    .node-header .node-status { width: 10; }
 
     #nodes_frame {
         height: 1fr;

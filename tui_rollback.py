@@ -9,7 +9,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, Static
 
 from core import CoreArchive
-from utils import apply_scrollbar_palette, get_theme_colors, get_theme_name, t
+from utils import apply_scrollbar_palette, get_modal_chrome, get_theme_colors, get_theme_name, t
 
 
 class RbItem(Button):
@@ -88,16 +88,6 @@ class RollbackScreen(ModalScreen):
         color: $accent;  /* = tech_text: текст строк версий = текст окна лога */
         text-align: left;
     }
-    /* Подсветка строки под курсором — ТОЛЬКО через CSS :hover: в Textual 8
-       screen-CSS перебивает инлайн-стили, подсветка из _hv_enter невидима.
-       Селектор строго специфичнее базового .rb-item. Цвета = select_bg/
-       select_text палитры — как выделенная нода в списке нод. */
-    .th-varekai .rb-item:hover { background: #fccf44; color: #1a1a1a; }
-    .th-nanita .rb-item:hover { background: #313d4e; color: #FFFFFF; }
-    .th-geek_green .rb-item:hover { background: #033C1E; color: #0cf07a; }
-    .th-blue_fir .rb-item:hover { background: #313d4e; color: #F6C884; }
-    .th-monokai .rb-item:hover { background: #3F3309; color: #FCD13A; }
-    .th-ikigai .rb-item:hover { background: #BD93F9; color: #282A36; }
     .rb-empty {
         width: 100%;
         text-align: center;
@@ -147,15 +137,13 @@ class RollbackScreen(ModalScreen):
         try:
             th = get_theme_colors()
             panel = self.query_one(".rb-panel", Container)
-            panel.styles.background = th["modal_bg"]
-            # Обрамление — как у основного окна (frame_color). Инлайн:
-            # per-theme CSS descendant-правила в Textual 8 не матчатся.
-            # Nanita — исключение: рамка = основной фон главного окна
-            # (fill_bg), как на скриншоте.
-            border_color = th["fill_bg"] if get_theme_name() == "nanita" else th["frame_color"]
-            panel.styles.border = ("heavy", border_color)
+            # Фон/рамка — из общего chrome модальных окон (инлайн:
+            # per-theme CSS в Textual 8 не матчатся)
+            chrome = get_modal_chrome()
+            panel.styles.background = chrome["bg"]
+            panel.styles.border = ("heavy", chrome["border"])
             # Текст заголовка — rollback_title палитры (varekai: жёлтый,
-            # как фон основных кнопок; nanita: чёрный на сером)
+            # как фон основных кнопок; nanita: тёмно-серо-синий)
             self.query_one(".rb-title", Static).styles.color = th["rollback_title"]
         except Exception:
             pass
