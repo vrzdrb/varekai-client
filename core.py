@@ -20,6 +20,7 @@ import requests
 
 from config import generate_smart_config
 from utils import (
+    APP_DIR,
     ARCHIVES_DIR,
     CONFIG_CLEAN,
     CONFIG_SMART,
@@ -747,6 +748,7 @@ def start_vpn():
         # (rule-providers ./unified, external-ui) разрешаются от папки
         # приложения, а не от ~/.config/mihomo или /root.
         base_cmd = [str(binary_path), "-d", str(script_dir), "-f", str(config_path)]
+        _debug_log(f"start_vpn: base_cmd={' '.join(base_cmd)}")
 
         def _wait_pid():
             deadline = time.time() + 30
