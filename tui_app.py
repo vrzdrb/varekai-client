@@ -69,7 +69,7 @@ def _lc(ok: bool) -> str:
 
 AUTO_RESET = "__AUTO_RESET__"
 NO_CONN = "__NO_CONN__"
-UI_REV = "gr76"  # маркер сборки интерфейса (для проверки, какой код реально запущен)
+UI_REV = "gr96"  # маркер сборки интерфейса (для проверки, какой код реально запущен)
 
 class QuitScreen(ModalScreen):
     """Подтверждение выхода при работающем VPN: Да — выйти, оставив VPN;
@@ -454,6 +454,7 @@ class VarekaiApp(App):
         ("l", "toggle_language", "Lang"), ("д", "toggle_language", "Lang"), ("Д", "toggle_language", "Lang"),
         ("c", "show_connections", "Connections"), ("с", "show_connections", "Connections"), ("С", "show_connections", "Connections"),
         ("t", "show_themes", "Theme"), ("е", "show_themes", "Theme"), ("Е", "show_themes", "Theme"),
+        ("u", "show_routing", "Routing"), ("г", "show_routing", "Routing"), ("Г", "show_routing", "Routing"),
         ("pageup", "log_page_up", "Log page up"),
         ("pagedown", "log_page_down", "Log page down"),
     ]
@@ -493,6 +494,7 @@ class VarekaiApp(App):
         return (
             f"[bold][bold {kc}]S[/] - [bold {hc}]{t('key_toggle')}[/]    "
             f"[bold {kc}]C[/] - [bold {hc}]{t('key_connections')}[/]    "
+            f"[bold {kc}]U[/] - [bold {hc}]{t('key_routing')}[/]    "
             f"[bold {kc}]PgUp/PgDn[/] - [bold {hc}]{t('key_log_scroll')}[/]    "
             f"[bold {kc}]L[/] - [bold {hc}]{t('key_lang')}[/]    "
             f"[bold {kc}]R[/] - [bold {hc}]{t('key_rollback')}[/]    "
@@ -727,6 +729,12 @@ class VarekaiApp(App):
         if isinstance(self.screen, (ConnectionsScreen, RollbackScreen, ThemesScreen)):
             return
         self.push_screen(ThemesScreen(), self._on_theme_picked)
+
+    def action_show_routing(self) -> None:
+        if isinstance(self.screen, (ConnectionsScreen, RollbackScreen, ThemesScreen)):
+            return
+        from tui_routing import RoutingScreen
+        self.push_screen(RoutingScreen())
 
     def _on_theme_picked(self, name) -> None:
         if not name:
@@ -1038,7 +1046,6 @@ class VarekaiApp(App):
             return True
 
         # 4. PUT API — ядро скачивает заново
-        api_ok = True
         for name in targets:
             encoded = urllib.parse.quote(name, safe="")
             try:
@@ -1060,7 +1067,6 @@ class VarekaiApp(App):
                     self.brief_log,
                     f"[bold {_lc(False)}]{t('rule_provider_fail', name=name)}[/]",
                 )
-                api_ok = False
 
         # 5. Проверяем файлы + fallback
         time.sleep(0.5)

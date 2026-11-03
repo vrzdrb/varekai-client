@@ -114,7 +114,21 @@ class BoldLabel(_BoldText):
 
 class FlatButton(_BoldText):
     """Кнопка на базе Static. Клик шлёт стандартное Button.Pressed —
-    обработчики экрана работают без изменений."""
+    обработчики экрана работают без изменений.
+    Поддерживает фокус клавиатуры (Tab, Enter/Space)."""
+
+    can_focus = True
+
+    def on_focus(self, event) -> None:
+        self._apply_enter()
+
+    def on_blur(self, event) -> None:
+        self._apply_leave()
+
+    def on_key(self, event) -> None:
+        if event.key in ("enter", "space"):
+            event.stop()
+            self.on_click()
 
     def on_click(self) -> None:
         if self.disabled:
@@ -128,7 +142,10 @@ class HeaderCell(Static):
     ровно как _BoldText-кнопки. Hover обеспечивает трекер курсора
     приложения (маркер-класс hv-track): Enter/Leave в Textual 8 в
     модальные окна не доходят, а CSS :hover на этих сборках не срабатывает.
-    Цвета читаются из ЖИВОЙ палитры — при смене темы клетки не залипают."""
+    Цвета читаются из ЖИВОЙ палитры — при смене темы клетки не залипают.
+    Поддерживает фокус клавиатуры (Tab, Enter/Space — имитирует клик)."""
+
+    can_focus = True
 
     def __init__(self, content="", **kwargs):
         super().__init__(content, **kwargs)
@@ -143,6 +160,18 @@ class HeaderCell(Static):
 
     def on_leave(self, event) -> None:
         self._hv_leave()
+
+    def on_focus(self, event) -> None:
+        self._hv_enter()
+
+    def on_blur(self, event) -> None:
+        self._hv_leave()
+
+    def on_key(self, event) -> None:
+        if event.key in ("enter", "space"):
+            event.stop()
+            from textual.events import Click
+            self.post_message(Click(self, x=0, y=0, delta_x=0, delta_y=0, button=1))
 
     def _apply_base(self) -> None:
         th = get_theme_colors()
@@ -200,6 +229,8 @@ class NodeRow(Widget):
     NodeRow .node-status { width: 10; text-align: center; }
     """
 
+    can_focus = True
+
     def __init__(self, index: int, name: str, delay: str, alive: str, current: bool,
                  group: str = "", on_select=None, key: str = "", selected: bool = False):
         classes = "node-row"
@@ -246,6 +277,41 @@ class NodeRow(Widget):
                 self.query_one(f".{cls}", Static).styles.color = text_color
             except Exception:
                 pass
+
+    def _focus_visual(self, focused: bool) -> None:
+        """Фокус клавиатуры: подсветка фона, не outline (reverse не
+        валиден как border-style в Textual 8 — KeyError при рендере)."""
+        th = get_theme_colors()
+        if focused and "selected" not in self.classes and "current" not in self.classes:
+            self.styles.background = th["button_hover"]
+            for cls in ("node-name", "node-delay", "node-status"):
+                try:
+                    self.query_one(f".{cls}", Static).styles.color = th.get("button_hover_text") or th["button_text"]
+                except Exception:
+                    pass
+        else:
+            self._apply_state()
+
+    def on_focus(self, event) -> None:
+        self._focus_visual(True)
+
+    def on_blur(self, event) -> None:
+        self._focus_visual(False)
+
+    def on_key(self, event) -> None:
+        if event.key == "enter":
+            event.stop()
+            self.on_click()
+        elif event.key in ("up", "down"):
+            event.stop()
+            siblings = list(self.parent.query(NodeRow)) if self.parent else []
+            if not siblings:
+                return
+            idx = siblings.index(self)
+            if event.key == "up" and idx > 0:
+                siblings[idx - 1].focus()
+            elif event.key == "down" and idx < len(siblings) - 1:
+                siblings[idx + 1].focus()
 
     def on_click(self, event) -> None:
         if self._on_select is not None:
@@ -327,6 +393,8 @@ class ConnectionRow(Widget):
     ConnectionRow.selected { background: $primary; }
     """
 
+    can_focus = True
+
     def __init__(self, conn_id: str, on_close=None):
         super().__init__()
         self.conn_id = conn_id
@@ -347,6 +415,39 @@ class ConnectionRow(Widget):
             st.styles.color = text_color
         for sep in self.query("Static.col-sep"):
             sep.styles.color = sep_color
+
+    def _focus_visual(self, focused: bool) -> None:
+        """Фокус клавиатуры: подсветка фона вместо outline."""
+        th = get_theme_colors()
+        if focused and "selected" not in self.classes:
+            self.styles.background = th["button_hover"]
+            for st in self._cells.values():
+                st.styles.color = th.get("button_hover_text") or th["button_text"]
+            for sep in self.query("Static.col-sep"):
+                sep.styles.color = th.get("button_hover_text") or th["button_text"]
+        else:
+            self._apply_state()
+
+    def on_focus(self, event) -> None:
+        self._focus_visual(True)
+
+    def on_blur(self, event) -> None:
+        self._focus_visual(False)
+
+    def on_key(self, event) -> None:
+        if event.key == "enter":
+            event.stop()
+            self._toggle_select()
+        elif event.key in ("up", "down"):
+            event.stop()
+            siblings = list(self.parent.query(ConnectionRow)) if self.parent else []
+            if not siblings:
+                return
+            idx = siblings.index(self)
+            if event.key == "up" and idx > 0:
+                siblings[idx - 1].focus()
+            elif event.key == "down" and idx < len(siblings) - 1:
+                siblings[idx + 1].focus()
 
     def _toggle_select(self) -> None:
         if "selected" in self.classes:
@@ -519,9 +620,9 @@ class SelectableRichLog(RichLog):
 
     # --- мышь ---
 
-    def _on_mouse_down(self, event) -> None:
+    def on_mouse_down(self, event) -> None:
         try:
-            super()._on_mouse_down(event)  # scrollbar-логика ScrollView
+            super().on_mouse_down(event)  # scrollbar-логика ScrollView
         except Exception:
             pass
         if getattr(event, "button", 1) != 1:
@@ -539,9 +640,9 @@ class SelectableRichLog(RichLog):
         except Exception:
             pass
 
-    def _on_mouse_move(self, event) -> None:
+    def on_mouse_move(self, event) -> None:
         try:
-            super()._on_mouse_move(event)
+            super().on_mouse_move(event)
         except Exception:
             pass
         if self._sel_anchor is None or not self._captured:
@@ -551,9 +652,9 @@ class SelectableRichLog(RichLog):
             self._sel_focus = hit
             self._paint_selection()
 
-    def _on_mouse_up(self, event) -> None:
+    def on_mouse_up(self, event) -> None:
         try:
-            super()._on_mouse_up(event)
+            super().on_mouse_up(event)
         except Exception:
             pass
         if not self._captured:

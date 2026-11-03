@@ -7,6 +7,7 @@ import re
 import shlex
 import shutil
 import subprocess
+import tarfile
 import tempfile
 import threading
 import time
@@ -19,7 +20,6 @@ import requests
 
 from config import generate_smart_config
 from utils import (
-    APP_DIR,
     ARCHIVES_DIR,
     CONFIG_CLEAN,
     CONFIG_SMART,
@@ -144,6 +144,16 @@ def _safe_extract_zip(zip_path, dest):
                 raise ValueError(f"Unsafe path in archive: {member.filename}")
         zip_ref.extractall(dest)
 
+
+def _safe_extract_tar(tar_path, dest):
+    """Распаковка tar с защитой от path traversal."""
+    with tarfile.open(str(tar_path), "r:gz") as tf:
+        for member in tf.getmembers():
+            target = (Path(dest) / member.name).resolve()
+            if not str(target).startswith(str(Path(dest).resolve())):
+                raise ValueError(f"Unsafe path in archive: {member.name}")
+        tf.extractall(path=dest)
+
 def _archive_kind(archive_path):
     """Возвращает 'zip' или 'gz' по имени файла, игнорируя суффикс .part."""
     name = str(archive_path)
@@ -182,10 +192,14 @@ def _extract_archive(archive_path, dest):
         if kind == "zip":
             _safe_extract_zip(archive_path, dest)
         elif kind == "gz":
-            with gzip.open(archive_path, "rb") as f_in:
-                binary_path = Path(dest) / Path(str(archive_path).removesuffix(".part")).stem
-                with open(binary_path, "wb") as f_out:
-                    shutil.copyfileobj(f_in, f_out)
+            # .tar.gz или .gz — пробуем tarfile, fallback на gzip
+            if tarfile.is_tarfile(str(archive_path)):
+                _safe_extract_tar(archive_path, dest)
+            else:
+                with gzip.open(archive_path, "rb") as f_in:
+                    binary_path = Path(dest) / Path(str(archive_path).removesuffix(".part")).stem
+                    with open(binary_path, "wb") as f_out:
+                        shutil.copyfileobj(f_in, f_out)
         else:
             return False, t("arch_broken")
         return True, None
@@ -259,6 +273,9 @@ def _install_from_archive(archive_path):
             if binary is None:
                 return False, t("arch_broken")
             return _stage_and_replace(binary)
+    except ValueError as e:
+        # Например: not enough values to unpack при парсинге архива
+        return False, f"{t('core_update_fail')}: {e}"
     except Exception as e:
         return False, f"{t('core_update_fail')}: {e}"
 
@@ -347,18 +364,20 @@ def get_latest_tag_via_redirect(repo):
 
 def get_latest_release_info(repo):
     """Возвращает (tag, assets, error)"""
+    headers = {"User-Agent": "Varekai-Client"}
     try:
         r = requests.get(
             f"https://api.github.com/repos/{repo}/releases/latest",
-            timeout=5,
-            headers={"User-Agent": "Varekai-Client"}
+            timeout=10,
+            headers=headers,
         )
         if r.status_code == 200:
             data = r.json()
             return data.get("tag_name"), data.get("assets", []), None
     except requests.exceptions.RequestException:
         pass
-    return get_latest_tag_via_redirect(repo)
+    tag, err = get_latest_tag_via_redirect(repo)
+    return tag, [], err
 
 
 def github_download_url(repo, tag, asset_name):

@@ -70,6 +70,15 @@ def generate_smart_config(force_stack=None):
                     if "tolerance" in group:
                         del group["tolerance"]
 
+        # Пользовательские правила маршрутизации
+        from user_routing import build_rule_line, inject_into_config, load_user_rules
+
+        user_rules = load_user_rules()
+        if user_rules and "rules" in config and isinstance(config["rules"], list):
+            direct = [build_rule_line(r) for r in user_rules if r.get("proxy") == "DIRECT"]
+            proxy = [build_rule_line(r) for r in user_rules if r.get("proxy") != "DIRECT"]
+            config["rules"] = inject_into_config(config["rules"], direct, proxy)
+
         dump_config_rt(config, CONFIG_SMART)
         return True
     except Exception:
