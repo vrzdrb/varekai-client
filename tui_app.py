@@ -69,7 +69,7 @@ def _lc(ok: bool) -> str:
 
 AUTO_RESET = "__AUTO_RESET__"
 NO_CONN = "__NO_CONN__"
-UI_REV = "gr99"  # маркер сборки интерфейса (для проверки, какой код реально запущен)
+UI_REV = "gr104"  # маркер сборки интерфейса (для проверки, какой код реально запущен)
 
 class QuitScreen(ModalScreen):
     """Подтверждение выхода при работающем VPN: Да — выйти, оставив VPN;
@@ -901,6 +901,10 @@ class VarekaiApp(App):
             self._log_result(True, msg)
         elif core_status == 1:
             self._log_result(True, msg)
+        elif core_status == 2 and Path(CORE_BINARY).exists():
+            # Ядро не удалось обновить (проблема с релизами на GitHub),
+            # но локальное ядро есть — продолжаем с предупреждением
+            self._log_result(False, msg)
         else:
             self._log_result(False, msg)
             return

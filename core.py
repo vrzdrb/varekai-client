@@ -7,7 +7,6 @@ import re
 import shlex
 import shutil
 import subprocess
-import tarfile
 import tempfile
 import threading
 import time
@@ -20,7 +19,6 @@ import requests
 
 from config import generate_smart_config
 from utils import (
-    APP_DIR,
     ARCHIVES_DIR,
     CONFIG_CLEAN,
     CONFIG_SMART,
@@ -43,9 +41,6 @@ from utils import (
 
 core_process = None
 _core_op_lock = threading.Lock()
-
-# Windows: wintun.dll должен лежать рядом с бинарником ядра (в core/)
-WINTUN_DLL = "wintun.dll"
 
 @dataclass
 class CoreArchive:
@@ -145,16 +140,6 @@ def _safe_extract_zip(zip_path, dest):
                 raise ValueError(f"Unsafe path in archive: {member.filename}")
         zip_ref.extractall(dest)
 
-
-def _safe_extract_tar(tar_path, dest):
-    """Распаковка tar с защитой от path traversal."""
-    with tarfile.open(str(tar_path), "r:gz") as tf:
-        for member in tf.getmembers():
-            target = (Path(dest) / member.name).resolve()
-            if not str(target).startswith(str(Path(dest).resolve())):
-                raise ValueError(f"Unsafe path in archive: {member.name}")
-        tf.extractall(path=dest)
-
 def _archive_kind(archive_path):
     """Возвращает 'zip' или 'gz' по имени файла, игнорируя суффикс .part."""
     name = str(archive_path)
@@ -193,33 +178,15 @@ def _extract_archive(archive_path, dest):
         if kind == "zip":
             _safe_extract_zip(archive_path, dest)
         elif kind == "gz":
-            # .tar.gz или .gz — пробуем tarfile, fallback на gzip
-            if tarfile.is_tarfile(str(archive_path)):
-                _safe_extract_tar(archive_path, dest)
-            else:
-                with gzip.open(archive_path, "rb") as f_in:
-                    binary_path = Path(dest) / Path(str(archive_path).removesuffix(".part")).stem
-                    with open(binary_path, "wb") as f_out:
-                        shutil.copyfileobj(f_in, f_out)
+            with gzip.open(archive_path, "rb") as f_in:
+                binary_path = Path(dest) / Path(str(archive_path).removesuffix(".part")).stem
+                with open(binary_path, "wb") as f_out:
+                    shutil.copyfileobj(f_in, f_out)
         else:
             return False, t("arch_broken")
         return True, None
     except Exception:
         return False, t("arch_broken")
-
-
-def _ensure_wintun(script_dir):
-    """Копирует wintun.dll из папки приложения в core/, если его там нет."""
-    if get_os() != "windows":
-        return
-    src = script_dir / "wintun.dll"
-    dst = script_dir / "core" / WINTUN_DLL
-    if src.exists() and not dst.exists():
-        try:
-            dst.parent.mkdir(exist_ok=True)
-            shutil.copy2(str(src), str(dst))
-        except Exception:
-            pass
 
 
 def _find_binary_in(directory):
@@ -274,9 +241,6 @@ def _install_from_archive(archive_path):
             if binary is None:
                 return False, t("arch_broken")
             return _stage_and_replace(binary)
-    except ValueError as e:
-        # Например: not enough values to unpack при парсинге архива
-        return False, f"{t('core_update_fail')}: {e}"
     except Exception as e:
         return False, f"{t('core_update_fail')}: {e}"
 
@@ -365,12 +329,11 @@ def get_latest_tag_via_redirect(repo):
 
 def get_latest_release_info(repo):
     """Возвращает (tag, assets, error)"""
-    headers = {"User-Agent": "Varekai-Client"}
     try:
         r = requests.get(
             f"https://api.github.com/repos/{repo}/releases/latest",
-            timeout=10,
-            headers=headers,
+            timeout=5,
+            headers={"User-Agent": "Varekai-Client"}
         )
         if r.status_code == 200:
             data = r.json()
@@ -460,7 +423,6 @@ def _update_core_impl():
             ok, err = _install_from_archive(archived)
             if ok:
                 _write_current_version(tag)
-                _ensure_wintun(get_script_dir())
                 cleanup_old_archives()
                 return 1, t("core_updated", version=tag)
             # Битый архив не держим — качаем заново.
@@ -490,7 +452,6 @@ def _update_core_impl():
             if not ok:
                 return 2, err
             _write_current_version(tag)
-            _ensure_wintun(get_script_dir())
             cleanup_old_archives()
             return 1, t("core_updated", version=tag)
         finally:
@@ -714,14 +675,10 @@ def start_vpn():
     try:
         script_dir = get_script_dir()
 
-        # Windows: wintun.dll → TUN system; нет → gvisor fallback
+        # Windows: wintun.dll в корне → mixed (как в конфиге); нет → gvisor fallback
         wintun_msg = None
         if get_os() == "windows":
-            _ensure_wintun(script_dir)
-            if (script_dir / "core" / WINTUN_DLL).exists():
-                generate_smart_config()
-                wintun_msg = t("wintun_found")
-            else:
+            if not (script_dir / "wintun.dll").exists():
                 generate_smart_config(force_stack="gvisor")
                 wintun_msg = t("wintun_missing")
 
@@ -748,7 +705,6 @@ def start_vpn():
         # (rule-providers ./unified, external-ui) разрешаются от папки
         # приложения, а не от ~/.config/mihomo или /root.
         base_cmd = [str(binary_path), "-d", str(script_dir), "-f", str(config_path)]
-        _debug_log(f"start_vpn: base_cmd={' '.join(base_cmd)}")
 
         def _wait_pid():
             deadline = time.time() + 30
@@ -830,4 +786,3 @@ def stop_vpn():
         return False, t("vpn_stop_fail")
     except Exception as e:
         return False, f"{t('vpn_stop_fail')}: {e}"
-
