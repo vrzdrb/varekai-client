@@ -2,6 +2,7 @@
 Главное TUI-приложение varekai на базе Textual.
 """
 import asyncio
+import shutil
 import time
 from collections import deque
 from functools import partial
@@ -40,6 +41,8 @@ from tui_widgets import (
 )
 from utils import (
     APP_VERSION,
+    CONFIG_CLEAN,
+    CONFIG_SMART,
     CORE_BINARY,
     CORE_LOG,
     THEMES,
@@ -48,6 +51,7 @@ from utils import (
     get_language,
     get_modal_chrome,
     get_os,
+    get_script_dir,
     get_theme_colors,
     get_theme_name,
     load_settings,
@@ -65,7 +69,7 @@ def _lc(ok: bool) -> str:
 
 AUTO_RESET = "__AUTO_RESET__"
 NO_CONN = "__NO_CONN__"
-UI_REV = "gr71"  # маркер сборки интерфейса (для проверки, какой код реально запущен)
+UI_REV = "gr76"  # маркер сборки интерфейса (для проверки, какой код реально запущен)
 
 class QuitScreen(ModalScreen):
     """Подтверждение выхода при работающем VPN: Да — выйти, оставив VPN;
@@ -913,37 +917,128 @@ class VarekaiApp(App):
                 self.call_from_thread(self.brief_log, f"[bold {th['log_err']}]{t('rule_providers_fail')}[/]")
 
     def _update_rule_providers_sync(self) -> bool:
-        """Обновляет все rule-providers через API ядра (механизм clash-verge-rev):
-        1. Ждём готовности API через GET /providers/rules.
-        2. Берём имена и типы провайдеров из ответа ядра.
-        3. Для каждого (кроме inline): PUT /providers/rules/{имя}.
+        """Обновляет все rule-providers с атомарным бэкапом:
+        1. Перемещает старые файлы http-провайдеров в providers-old.
+        2. PUT /providers/rules/{имя} — ядро скачивает заново.
+        3. Проверяет, что файлы появились, не пустые, не HTML.
+        4. Fallback: если файл не появился — скачиваем напрямую.
+        5. Если все провайдеры валидны — удаляем providers-old.
+           Иначе — откатываем провайдеры из providers-old обратно.
         Возвращает True, если все провайдеры обновились успешно."""
+        import os
+        import tempfile
         import urllib.parse
+        from pathlib import Path
 
         import requests as req
+
         secret = get_api_secret()
         headers = {"Authorization": f"Bearer {secret}"} if secret else {}
         base = "http://127.0.0.1:9090"
+
+        # 1. Читаем конфиг для путей и URL провайдеров
+        rp_config = {}
+        try:
+            from config import load_config_rt
+
+            cfg_path = CONFIG_SMART if CONFIG_SMART.exists() else CONFIG_CLEAN
+            cfg = load_config_rt(cfg_path)
+            rp_config = cfg.get("rule-providers", {}) or {}
+        except Exception:
+            pass
+
+        script_dir = get_script_dir()
+        old_dir = script_dir / "providers-old"
+
+        # Очистка прошлой резервной копии (если осталась с прошлого раза)
+        if old_dir.exists():
+            try:
+                shutil.rmtree(old_dir)
+            except Exception:
+                pass
+        old_dir.mkdir(exist_ok=True)
+
+        # 2. Бэкап старых файлов http-провайдеров
+        backed = []  # (src_path, backup_path)
+        for name, info in rp_config.items():
+            if not isinstance(info, dict):
+                continue
+            if str(info.get("type", "")).lower() != "http":
+                continue
+            path_val = info.get("path", "")
+            if not path_val:
+                continue
+            try:
+                src = (
+                    script_dir / path_val
+                    if not os.path.isabs(path_val)
+                    else Path(path_val)
+                )
+                if src.exists():
+                    dst = old_dir / path_val
+                    dst.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.move(str(src), str(dst))
+                    backed.append((src, dst))
+            except Exception:
+                pass
+
+        if backed:
+            self.call_from_thread(
+                self.brief_log,
+                f"[bold {_lc(True)}]{t('rule_providers_backup')}[/]",
+            )
+
+        # 3. Ждём API ядра
         providers = None
         for _ in range(15):
             try:
-                r = req.get(f"{base}/providers/rules", headers=headers, timeout=3)
+                r = req.get(
+                    f"{base}/providers/rules", headers=headers, timeout=3
+                )
                 if r.status_code == 200:
                     providers = r.json().get("providers") or {}
                     break
             except Exception:
                 pass
             time.sleep(1)
+
+        def _rollback():
+            """Восстановить провайдеры из бэкапа."""
+            for src, dst in backed:
+                try:
+                    src.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.move(str(dst), str(src))
+                except Exception:
+                    pass
+            try:
+                if old_dir.exists():
+                    shutil.rmtree(old_dir)
+            except Exception:
+                pass
+            self.call_from_thread(
+                self.brief_log,
+                f"[bold {_lc(False)}]{t('rule_providers_rollback')}[/]",
+            )
+
         if providers is None:
+            _rollback()
             return False
+
         targets = [
-            name for name, data in providers.items()
+            name
+            for name, data in providers.items()
             if isinstance(data, dict)
             and str(data.get("type", "")).lower() in ("http", "file")
         ]
         if not targets:
+            try:
+                shutil.rmtree(old_dir)
+            except Exception:
+                pass
             return True
-        all_ok = True
+
+        # 4. PUT API — ядро скачивает заново
+        api_ok = True
         for name in targets:
             encoded = urllib.parse.quote(name, safe="")
             try:
@@ -958,15 +1053,108 @@ class VarekaiApp(App):
             if ok:
                 self.call_from_thread(
                     self.brief_log,
-                    f"[bold {_lc(True)}]{t('rule_provider_ok', name=name)}[/]"
+                    f"[bold {_lc(True)}]{t('rule_provider_ok', name=name)}[/]",
                 )
             else:
                 self.call_from_thread(
                     self.brief_log,
-                    f"[bold {_lc(False)}]{t('rule_provider_fail', name=name)}[/]"
+                    f"[bold {_lc(False)}]{t('rule_provider_fail', name=name)}[/]",
                 )
-                all_ok = False
-        return all_ok
+                api_ok = False
+
+        # 5. Проверяем файлы + fallback
+        time.sleep(0.5)
+        all_valid = True
+        for name, info in rp_config.items():
+            if not isinstance(info, dict):
+                continue
+            if str(info.get("type", "")).lower() != "http":
+                continue
+            path_val = info.get("path", "")
+            url = info.get("url", "")
+            if not path_val:
+                continue
+
+            fp = (
+                script_dir / path_val
+                if not os.path.isabs(path_val)
+                else Path(path_val)
+            )
+            try:
+                if fp.exists() and fp.stat().st_size > 50:
+                    start = (
+                        fp.read_bytes()[:200]
+                        .decode("utf-8", errors="replace")
+                        .strip()
+                        .lower()
+                    )
+                    if "<html" not in start and "<!doctype" not in start:
+                        continue
+            except Exception:
+                pass
+
+            if not url:
+                all_valid = False
+                continue
+
+            # Fallback: скачиваем сами
+            self.call_from_thread(
+                self.brief_log,
+                f"[bold {_lc(False)}]{t('rule_provider_fallback', name=name)}[/]",
+            )
+            try:
+                r = req.get(url, timeout=30)
+                if r.status_code == 200 and len(r.content) > 50:
+                    start = (
+                        r.content[:200]
+                        .decode("utf-8", errors="replace")
+                        .strip()
+                        .lower()
+                    )
+                    if "<html" in start or "<!doctype" in start:
+                        raise ValueError("HTML error page")
+
+                    fp.parent.mkdir(parents=True, exist_ok=True)
+                    fd, tmp = tempfile.mkstemp(
+                        dir=str(fp.parent), prefix=f".{name}_"
+                    )
+                    try:
+                        with os.fdopen(fd, "wb") as f:
+                            f.write(r.content)
+                        os.replace(tmp, str(fp))
+                        self.call_from_thread(
+                            self.brief_log,
+                            f"[bold {_lc(True)}]{t('rule_provider_fallback_ok', name=name)}[/]",
+                        )
+                        continue
+                    except Exception:
+                        try:
+                            os.unlink(tmp)
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+
+            self.call_from_thread(
+                self.brief_log,
+                f"[bold {_lc(False)}]{t('rule_provider_empty', name=name)}[/]",
+            )
+            all_valid = False
+
+        # 6. Финал: успех — чистим бэкап; провал — откат
+        if all_valid:
+            try:
+                shutil.rmtree(old_dir)
+            except Exception:
+                pass
+            self.call_from_thread(
+                self.brief_log,
+                f"[bold {_lc(True)}]{t('rule_providers_purge_backup')}[/]",
+            )
+            return True
+
+        _rollback()
+        return False
 
     def _reload_groups_order(self):
         self._groups_order = get_proxy_groups_order()

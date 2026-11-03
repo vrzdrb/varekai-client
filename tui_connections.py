@@ -284,9 +284,12 @@ class ConnectionsScreen(ModalScreen):
 
     async def _resort_rows(self):
         async with self._refresh_lock:
-            await self._resort_locked()
+            await self._sort_rows_locked()
 
-    async def _resort_locked(self):
+    async def _sort_rows_locked(self):
+        """Переставляет СУЩЕСТВУЮЩИЕ строки в DOM в порядке активной
+        сортировки. Вызывается из _refresh_locked (уже под lock) и из
+        _resort_rows (захватывает lock сам)."""
         if not self._sort_column:
             return
         col = self._sort_column
@@ -305,8 +308,6 @@ class ConnectionsScreen(ModalScreen):
 
         rows_data.sort(key=lambda x: sort_key(x), reverse=reverse)
 
-        # Переставляем СУЩЕСТВУЮЩИЕ строки местами, без удаления/пересоздания:
-        # remove_children + mount оставлял ячейки пустыми до следующего тика.
         # move_child требует явного before/after: первую строку — в начало,
         # каждую следующую — после предыдущей.
         prev = None
@@ -319,37 +320,6 @@ class ConnectionsScreen(ModalScreen):
                 self._scroll.move_child(row, after=prev)
             prev = row
         self.refresh()
-
-    def _default_key(self, raw):
-        return (str(raw.get("rule") or ""), str(raw.get("domain") or ""))
-
-    def _active_key(self, raw):
-        """Ключ сортировки строки: выбранный столбец либо порядок
-        по умолчанию (правило, домен)."""
-        if not self._sort_column:
-            return self._default_key(raw)
-        v = raw.get(self._sort_column)
-        if isinstance(v, (int, float)):
-            return v
-        return str(v)
-
-    def _comes_before(self, a, b) -> bool:
-        if not (isinstance(a, tuple) and isinstance(b, tuple)):
-            if not (isinstance(a, (int, float)) and isinstance(b, (int, float))):
-                a, b = str(a), str(b)
-        less = a < b
-        return less if not self._sort_reverse else not less
-
-    def _insert_anchor(self, raw):
-        """Первая существующая строка, которая должна идти ПОСЛЕ новой
-        по текущей сортировке — новую вставляем перед ней. Как в
-        clash-verge-rev: таблица всегда отсортирована, новые элементы
-        встают на свою позицию, а не в конец."""
-        key = self._active_key(raw)
-        for _cid, row in self._rows.items():
-            if self._comes_before(key, self._active_key(row._raw)):
-                return row
-        return None
 
     @staticmethod
     def _conn_sort_key(c):
@@ -515,11 +485,9 @@ class ConnectionsScreen(ModalScreen):
             row = self._rows.get(cid)
             if row is None:
                 row = ConnectionRow(cid, on_close=self._request_close)
-                anchor = self._insert_anchor(raw_data)
-                if anchor is not None:
-                    await self._scroll.mount(row, before=anchor)
-                else:
-                    await self._scroll.mount(row)
+                # Просто в конец; финальный порядок задаёт _sort_rows_locked
+                # после обработки всего пакета (убран race incremental-insert)
+                await self._scroll.mount(row)
                 self._rows[cid] = row
             row.set_data(host, sport_txt, dport_txt, server, rule_txt, ds_txt, fmt_bytes(dl), us_txt, fmt_bytes(ul), raw_data)
             self._prev[cid] = (dl, ul, now)
@@ -531,5 +499,9 @@ class ConnectionsScreen(ModalScreen):
                     pass
                 del self._rows[cid]
                 self._prev.pop(cid, None)
+        # Полная пересортировка DOM под активное правило (как в zashboard:
+        # весь массив сортируется, затем перерисовывается)
+        if self._sort_column:
+            await self._sort_rows_locked()
         if self._empty is not None:
             self._empty.display = (len(self._rows) == 0)

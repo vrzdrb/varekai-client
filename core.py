@@ -19,6 +19,7 @@ import requests
 
 from config import generate_smart_config
 from utils import (
+    APP_DIR,
     ARCHIVES_DIR,
     CONFIG_CLEAN,
     CONFIG_SMART,
@@ -41,6 +42,9 @@ from utils import (
 
 core_process = None
 _core_op_lock = threading.Lock()
+
+# Windows: wintun.dll должен лежать рядом с бинарником ядра (в core/)
+WINTUN_DLL = "wintun.dll"
 
 @dataclass
 class CoreArchive:
@@ -187,6 +191,20 @@ def _extract_archive(archive_path, dest):
         return True, None
     except Exception:
         return False, t("arch_broken")
+
+
+def _ensure_wintun(script_dir):
+    """Копирует wintun.dll из папки приложения в core/, если его там нет."""
+    if get_os() != "windows":
+        return
+    src = script_dir / "wintun.dll"
+    dst = script_dir / "core" / WINTUN_DLL
+    if src.exists() and not dst.exists():
+        try:
+            dst.parent.mkdir(exist_ok=True)
+            shutil.copy2(str(src), str(dst))
+        except Exception:
+            pass
 
 
 def _find_binary_in(directory):
@@ -422,6 +440,7 @@ def _update_core_impl():
             ok, err = _install_from_archive(archived)
             if ok:
                 _write_current_version(tag)
+                _ensure_wintun(get_script_dir())
                 cleanup_old_archives()
                 return 1, t("core_updated", version=tag)
             # Битый архив не держим — качаем заново.
@@ -451,6 +470,7 @@ def _update_core_impl():
             if not ok:
                 return 2, err
             _write_current_version(tag)
+            _ensure_wintun(get_script_dir())
             cleanup_old_archives()
             return 1, t("core_updated", version=tag)
         finally:
@@ -673,6 +693,18 @@ def start_vpn():
             return False, t("prof_not_found")
     try:
         script_dir = get_script_dir()
+
+        # Windows: wintun.dll → TUN system; нет → gvisor fallback
+        wintun_msg = None
+        if get_os() == "windows":
+            _ensure_wintun(script_dir)
+            if (script_dir / "core" / WINTUN_DLL).exists():
+                generate_smart_config()
+                wintun_msg = t("wintun_found")
+            else:
+                generate_smart_config(force_stack="gvisor")
+                wintun_msg = t("wintun_missing")
+
         binary_path = script_dir / CORE_BINARY
         config_path = script_dir / CONFIG_SMART
         log_path = script_dir / CORE_LOG
@@ -744,7 +776,10 @@ def start_vpn():
                     _start_detached(cmd, log_path, script_dir)
                     pid = _wait_pid()
         if pid:
-            return True, t("vpn_start_ok")
+            msg = t("vpn_start_ok")
+            if wintun_msg:
+                msg = f"{wintun_msg} | {msg}"
+            return True, msg
         return False, f"{t('vpn_start_fail')}: {t('log_core')}"
     except Exception as e:
         return False, f"{t('vpn_start_fail')}: {e}"

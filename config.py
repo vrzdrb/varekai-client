@@ -31,10 +31,12 @@ def dump_config_rt(data, path):
         y.dump(data, f)
 
 
-def generate_smart_config():
+def generate_smart_config(force_stack=None):
     """Генерирует smart-config.yaml из config.yaml.
     Смарт-стратегии ВСЕГДА включены.
-    Для Windows: strict-route: false."""
+    Для Windows: strict-route: false.
+    force_stack — принудительно установить tun.stack (например, 'gvisor'
+    при отсутствии wintun.dll)."""
     if not CONFIG_CLEAN.exists():
         return False
     try:
@@ -44,6 +46,8 @@ def generate_smart_config():
             tun = config.get("tun")
             if isinstance(tun, dict):
                 tun["strict-route"] = False
+                if force_stack:
+                    tun["stack"] = force_stack
 
         # Локальный дашборд из подписки не нужен: без external-ui-url
         # ядро не будет качать zashboard и подобные UI при каждом старте.
