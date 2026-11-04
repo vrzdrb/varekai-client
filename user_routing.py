@@ -8,7 +8,7 @@ from pathlib import Path
 
 from ruamel.yaml import YAML
 
-from utils import get_script_dir, t
+from utils import get_script_dir
 
 USER_RULES_FILE = "user-rules.yaml"
 
