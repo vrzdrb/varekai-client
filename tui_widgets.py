@@ -401,6 +401,7 @@ class ConnectionRow(Widget):
         self._on_close = on_close
         self._cells = {}
         self._raw = {}
+        self._pending_data = None
 
     def _apply_state(self) -> None:
         """Цвета под текущее состояние выделения. Inline-стили надёжнее
@@ -411,8 +412,9 @@ class ConnectionRow(Widget):
         self.styles.background = th["select_bg"] if active else "transparent"
         text_color = (th.get("select_text") or th["button_text"]) if active else th["tech_text"]
         sep_color = text_color
-        for st in self._cells.values():
-            st.styles.color = text_color
+        if self._cells:
+            for st in self._cells.values():
+                st.styles.color = text_color
         for sep in self.query("Static.col-sep"):
             sep.styles.color = sep_color
 
@@ -421,8 +423,9 @@ class ConnectionRow(Widget):
         th = get_theme_colors()
         if focused and "selected" not in self.classes:
             self.styles.background = th["button_hover"]
-            for st in self._cells.values():
-                st.styles.color = th.get("button_hover_text") or th["button_text"]
+            if self._cells:
+                for st in self._cells.values():
+                    st.styles.color = th.get("button_hover_text") or th["button_text"]
             for sep in self.query("Static.col-sep"):
                 sep.styles.color = th.get("button_hover_text") or th["button_text"]
         else:
@@ -488,6 +491,10 @@ class ConnectionRow(Widget):
             self._apply_state()
         except Exception:
             pass
+        if self._pending_data is not None:
+            args = self._pending_data
+            self._pending_data = None
+            self.set_data(*args)
 
     def on_click(self, event) -> None:
         ctrl = event.control
@@ -504,6 +511,12 @@ class ConnectionRow(Widget):
         # Text(...) — иначе квадратные скобки ([CZ], порты) съедаются
         # Rich-разметкой Static. Обновление безусловное: гейт по «значение
         # не изменилось» давал пустые ячейки на части сборок Textual.
+        # Защита от race: compose откладывается event-loop'ом, а set_data
+        # может быть вызван до того, как _cells заполнен. Сохраняем данные
+        # и применяем в on_mount, когда compose гарантированно завершён.
+        if not self._cells:
+            self._pending_data = (domain, sport, dport, server, rule, ds, dt, us, ut, raw)
+            return
         for key, value in (
             ("domain", domain), ("sport", sport), ("dport", dport),
             ("server", server), ("rule", rule),
