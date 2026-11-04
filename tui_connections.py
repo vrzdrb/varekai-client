@@ -13,7 +13,7 @@ from textual.widgets import Static
 
 from clash_api import ClashAPI
 from tui_widgets import CloseAllCell, ConnectionRow, HeaderCell, fmt_bytes, fmt_speed
-from utils import apply_scrollbar_palette, get_os, replace_flag_emojis, t
+from utils import apply_scrollbar_palette, get_os, load_settings, replace_flag_emojis, save_settings, t
 
 CONN_POLL_INTERVAL = 0.2  # 5 раз в секунду
 
@@ -127,8 +127,9 @@ class ConnectionsScreen(ModalScreen):
         self._proxies_cache = {}
         self._delay_cache = {}
         self._refresh_lock = asyncio.Lock()
-        self._sort_column = None
-        self._sort_reverse = False
+        settings = load_settings()
+        self._sort_column = settings.get("conn_sort_column") or None
+        self._sort_reverse = settings.get("conn_sort_reverse", False)
 
     def _conn_footer_text(self) -> str:
         from utils import get_theme_colors
@@ -199,6 +200,8 @@ class ConnectionsScreen(ModalScreen):
         except Exception:
             pass
         self._empty = self.query_one("#conn_empty", Static)
+        if self._sort_column:
+            self._update_header_styles()
         self.set_interval(CONN_POLL_INTERVAL, self.refresh_connections)
 
     def action_close_screen(self) -> None:
@@ -230,6 +233,10 @@ class ConnectionsScreen(ModalScreen):
                     self._sort_reverse = False
                 self._update_header_styles()
                 self.call_next(self._resort_rows)
+                settings = load_settings()
+                settings["conn_sort_column"] = self._sort_column
+                settings["conn_sort_reverse"] = self._sort_reverse
+                save_settings(settings)
 
     async def _close_all_conns(self) -> None:
         async with self._refresh_lock:

@@ -301,9 +301,14 @@ def load_mirrors():
 def download_with_fallback(url, dest_path):
     """Скачивает файл в dest_path: сначала напрямую, затем через зеркала.
     Возвращает (ok, error)."""
+    headers = {"User-Agent": "Varekai-Client"}
     for prefix in [""] + load_mirrors():
         try:
-            response = requests.get(prefix + url, stream=True, timeout=5 if prefix == "" else 30)
+            response = requests.get(
+                prefix + url, stream=True,
+                timeout=10 if prefix == "" else 30,
+                headers=headers,
+            )
             if response.status_code == 200:
                 with open(dest_path, "wb") as f:
                     for chunk in response.iter_content(chunk_size=8192):
@@ -315,11 +320,30 @@ def download_with_fallback(url, dest_path):
 
 
 def get_latest_tag_via_redirect(repo):
-    """Получает тег последнего релиза через редирект"""
+    """Получает тег последнего релиза через редирект.
+    Сначала HEAD (быстрее), затем GET (некоторые зеркала не поддерживают HEAD)."""
     url = f"https://github.com/{repo}/releases/latest"
+    headers = {"User-Agent": "Varekai-Client"}
     for prefix in [""] + load_mirrors():
+        full = prefix + url
         try:
-            r = requests.head(prefix + url, allow_redirects=True, timeout=5 if prefix == "" else 10)
+            r = requests.head(
+                full, allow_redirects=True,
+                timeout=10 if prefix == "" else 15,
+                headers=headers,
+            )
+            if r.status_code == 200 and "/tag/" in r.url:
+                return r.url.rstrip("/").split("/tag/")[-1], None
+        except requests.exceptions.RequestException:
+            pass
+        # Fallback: GET если HEAD не сработал (прокси/зеркала могут
+        # возвращать 405 Method Not Allowed на HEAD)
+        try:
+            r = requests.get(
+                full, allow_redirects=True,
+                timeout=10 if prefix == "" else 15,
+                headers=headers,
+            )
             if r.status_code == 200 and "/tag/" in r.url:
                 return r.url.rstrip("/").split("/tag/")[-1], None
         except requests.exceptions.RequestException:
@@ -332,7 +356,7 @@ def get_latest_release_info(repo):
     try:
         r = requests.get(
             f"https://api.github.com/repos/{repo}/releases/latest",
-            timeout=5,
+            timeout=10,
             headers={"User-Agent": "Varekai-Client"}
         )
         if r.status_code == 200:
@@ -669,9 +693,10 @@ def start_vpn():
         return True, t("vpn_start_ok")
     if not Path(CORE_BINARY).exists():
         return False, t("core_not_found")
-    if not CONFIG_SMART.exists():
-        if not CONFIG_CLEAN.exists() or not generate_smart_config():
-            return False, t("prof_not_found")
+    if not CONFIG_CLEAN.exists():
+        return False, t("prof_not_found")
+    if not generate_smart_config():
+        return False, t("prof_not_found")
     try:
         script_dir = get_script_dir()
 
