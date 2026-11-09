@@ -54,38 +54,11 @@ jobs:
           https://gh-proxy.org/
           EOF
 
-      - name: Create Linux launcher
-        if: matrix.platform == 'linux'
-        shell: bash
-        run: |
-          cat > START.sh << 'SCRIPT'
-          #!/bin/sh
-          cd "$(dirname "$0")"
-          for t in foot kitty alacritty wezterm gnome-terminal konsole xfce4-terminal lxterminal mate-terminal tilix terminator xterm urxvt st; do
-              if command -v "$t" >/dev/null 2>&1; then
-                  exec "$t" -e ./Varekai
-              fi
-          done
-          echo "No terminal emulator found. Please install one (foot, kitty, alacritty, gnome-terminal, etc.)."
-          read -p "Press Enter to exit..."
-          SCRIPT
-          chmod +x START.sh
-          cat > START.desktop << 'EOF'
-          [Desktop Entry]
-          Name=Varekai Client
-          Comment=VPN client based on prizrak-core
-          Exec=./START.sh
-          Icon=utilities-terminal
-          Terminal=false
-          Type=Application
-          Categories=Network;VPN;
-          EOF
-
       - name: Create macOS starter
         if: matrix.platform == 'macos'
         shell: bash
         run: |
-          printf '#!/bin/bash\ncd "$(dirname "$0")"\n./Varekai\n' > START.command
+          printf '#!/bin/bash\ncd "$(dirname "$0")"\nxattr -cr .\n./Varekai\n' > START.command
           chmod +x START.command
 
       - name: Embed version into build
@@ -105,16 +78,26 @@ jobs:
       - name: Build with PyInstaller
         shell: bash
         run: |
-          pyinstaller --onedir --name varekai-client --hidden-import _build_version --icon app.ico main.py
-          if [ "${{ matrix.platform }}" = "windows" ]; then
-            mv dist/varekai-client/varekai-client.exe dist/varekai-client/START.exe
+          if [ "${{ matrix.platform }}" = "macos" ]; then
+            # macOS: один бинарник (нет сломанных symlinks в .framework),
+            # self-sign чтобы Gatekeeper не ругался «повреждено»
+            pyinstaller --onefile --name Varekai --hidden-import _build_version --icon app.ico main.py
+            mkdir -p dist/varekai-client
+            mv dist/Varekai dist/varekai-client/
+            codesign --force --deep --sign - dist/varekai-client/Varekai
           else
-            mv dist/varekai-client/varekai-client dist/varekai-client/Varekai
+            pyinstaller --onedir --name varekai-client --hidden-import _build_version --icon app.ico main.py
+            if [ "${{ matrix.platform }}" = "windows" ]; then
+              mv dist/varekai-client/varekai-client.exe dist/varekai-client/START.exe
+              if [ -f wintun.dll ]; then
+                cp wintun.dll dist/varekai-client/
+              fi
+            else
+              mv dist/varekai-client/varekai-client dist/varekai-client/Varekai
+            fi
           fi
           cp mirrors.txt dist/varekai-client/
-          if [ "${{ matrix.platform }}" = "linux" ]; then
-            cp START.sh START.desktop dist/varekai-client/
-          elif [ "${{ matrix.platform }}" = "macos" ]; then
+          if [ "${{ matrix.platform }}" = "macos" ]; then
             cp START.command dist/varekai-client/
           fi
 
@@ -124,6 +107,8 @@ jobs:
           cd dist
           if [ "${{ matrix.platform }}" = "windows" ]; then
             7z a ../varekai-client-${{ matrix.platform }}-${{ matrix.arch }}-v${{ inputs.version }}.zip varekai-client/
+          elif [ "${{ matrix.platform }}" = "macos" ]; then
+            hdiutil create -srcfolder varekai-client -volname "Varekai Client" -fs HFS+ -format UDZO -ov ../varekai-client-${{ matrix.platform }}-${{ matrix.arch }}-v${{ inputs.version }}.dmg
           else
             tar -czf ../varekai-client-${{ matrix.platform }}-${{ matrix.arch }}-v${{ inputs.version }}.tar.gz varekai-client/
           fi
