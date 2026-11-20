@@ -1,6 +1,7 @@
 """
 Главное TUI-приложение varekai на базе Textual.
 """
+
 import asyncio
 import shutil
 import time
@@ -16,7 +17,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, Static
 
 from clash_api import ClashAPI
-from config import get_api_secret, get_proxy_groups_order
+from config import get_api_secret, get_delay_test_url, get_proxy_groups_order
 from core import (
     get_core_pid,
     get_current_core_info,
@@ -69,7 +70,16 @@ def _lc(ok: bool) -> str:
 
 AUTO_RESET = "__AUTO_RESET__"
 NO_CONN = "__NO_CONN__"
-UI_REV = "gr107"  # маркер сборки интерфейса (для проверки, какой код реально запущен)
+UI_REV = "gr108"  # маркер сборки интерфейса (для проверки, какой код реально запущен)
+
+# --- Тест задержек («Проверить пинг») ---
+# Прежний вариант шёл строго последовательно по 4 с на узел: 60 нод
+# давали до 30 с. Теперь узлы тестятся параллельно с ограничением,
+# каждый РОВНО ОДИН раз, а N/A получают один повтор с большим таймаутом.
+PING_CONCURRENCY = 24         # одновременных запросов к API ядра
+PING_TIMEOUT_MS = 5000        # серверный таймаут одного узла
+PING_RETRY_TIMEOUT_MS = 8000  # повтор только для тех, кто дал N/A
+
 
 class QuitScreen(ModalScreen):
     """Подтверждение выхода при работающем VPN: Да — выйти, оставив VPN;
@@ -215,7 +225,6 @@ class VarekaiApp(App):
 
     CSS = """
     Screen { background: $background; text-style: bold; }
-
     #app_header {
         dock: top;
         height: 1;
@@ -226,7 +235,6 @@ class VarekaiApp(App):
         padding: 0;
         margin: 0;
     }
-
     #footer_bar {
         dock: bottom;
         height: 1;
@@ -234,7 +242,6 @@ class VarekaiApp(App):
         color: $foreground;
         padding: 0 1 0 3;
     }
-
     .panel {
         border: heavy $primary;
         padding: 1 2;
@@ -244,7 +251,6 @@ class VarekaiApp(App):
     }
     .left-panel { width: 1fr; height: 100%; }
     .right-panel { width: 1fr; height: 100%; }
-
     #status_label {
         width: 100%;
         height: 1;
@@ -255,13 +261,12 @@ class VarekaiApp(App):
     }
     #status_label.status-on  { background: #34C421; }
     #status_label.status-off { background: #F50A0A; }
-    /* Дочерний Static _BoldText ловит глобальное Static{color:#e0e0e0}
-       по типу, а не по наследованию — чёрный задаём явно */
+    /* Историческое правило: у _BoldText нет дочернего .fb-a (он обновляет
+       сам себя), цвет текста задаётся стилем внутри Text. Оставлено как
+       страховка, ничего не матчит. */
     #status_label .fb-a { color: #1a1a1a; }
     .btn-action .fb-a, .btn-lang .fb-a, .quit-btn .fb-a { color: $secondary; }
-
     #info_label { width: 100%; text-align: center; margin: 0 0 1 0; }
-
     .btn-row { width: 100%; height: 3; margin: 1 0; }
     .btn-action {
         width: 1fr; height: 100%; margin: 0;
@@ -277,12 +282,10 @@ class VarekaiApp(App):
         background: $primary; color: $secondary; text-style: bold;
     }
     .btn-lang:hover { background: $warning; }
-
     #log_title {
         width: 100%; text-align: center;
         color: $foreground; text-style: bold; margin: 0 0 1 0;
     }
-
     #log_frame {
         height: 1fr;
         border: heavy $primary;
@@ -299,11 +302,9 @@ class VarekaiApp(App):
         scrollbar-size: 1 1;
         scrollbar-gutter: stable;  /* место под скроллбар всегда занято */
         scrollbar-background: $panel;  /* = фон панели: поле справа как отступ слева */
-        /* Цвета ползунка — инлайн из палитры кнопок групп (см. ниже) */
+        /* Цвета ползунка — инлайн из палитры group_bg/group_text */
     }
-
     #label_group { width: 100%; text-align: center; margin: 0 0; }
-
     Select { width: 100%; height: 3; background: transparent; margin: 1 0 1 0; }
     SelectCurrent {
         width: 100%; height: 100%;
@@ -328,7 +329,6 @@ class VarekaiApp(App):
        основного цвета кнопок (#005467 -> #407F8D) */
     .th-blue_fir SelectCurrent { background: #407F8D; }
     .th-blue_fir SelectCurrent:focus { background: #407F8D; }
-
     SelectOverlay {
         border: double #F0C60A;
         background: #1a0a30;
@@ -350,10 +350,7 @@ class VarekaiApp(App):
         background: #F0C60A !important;
         color: #1a1a1a !important;
     }
-
     #groups_scroll NodeRow Static { color: $accent; }
-
-
     #nodes_frame {
         height: 1fr;
         border: heavy $primary;
@@ -368,7 +365,7 @@ class VarekaiApp(App):
         scrollbar-size: 1 1;
         scrollbar-gutter: stable;  /* скроллбар не появляется/не прячется при ресайзе */
         scrollbar-background: $panel;
-        /* Цвета ползунка — инлайн из палитры кнопок групп (см. ниже) */
+        /* Цвета ползунка — инлайн из палитры group_bg/group_text */
     }
     .groups-title-row { width: 100%; height: 3; margin: 0 0 1 0; }
     #groups_title {
@@ -378,19 +375,19 @@ class VarekaiApp(App):
     }
     .btn-ping {
         width: 16; height: 3;
+        border: none;
         background: $primary;
     }
     .btn-ping:hover { background: $warning; }
     .btn-ping .fb-a { color: $secondary; }
+    /* Пока тест идёт, кнопка заблокирована: два клика раньше запускали
+       два полных прогона одних и тех же узлов */
+    .btn-ping:disabled { background: $panel; }
     #groups_col1 { width: 100%; height: auto; }
-
-
     Button { background: $panel; color: $primary; border: none; }
-
     Button:hover { background: #6b5099; }
     Label { color: #e0e0e0; text-style: bold; margin: 1 0; }
     Static { color: $foreground; text-style: bold; }
-
     .col-domain { width: 1fr; min-width: 8; text-align: left; }
     .col-sport { width: 6; min-width: 0; text-align: right; }
     .col-dport { width: 6; min-width: 0; text-align: right; }
@@ -402,19 +399,20 @@ class VarekaiApp(App):
     .col-ut     { width: 9;  min-width: 0; text-align: right; }
     .col-act    { width: 3;  min-width: 0; text-align: center; align-horizontal: center; color: $primary; text-style: bold; }
     .col-sep    { width: 1;  text-align: center; color: $primary; }
-
     /* Кнопки групп: без фиксации высоты класс btn-action растягивал
        кнопку на всю раскрытую группу */
     #groups_scroll .group-btn { height: 2; width: 100%; }
-    /* Фон кнопок групп — per-theme screen-CSS: механизм с самым высоким
-       приоритетом надёжности в Textual 8 (см. брифинг). Дублирует
-       GroupRow.on_mount и _apply_base — хоть один да сработает */
-    .th-varekai GroupRow FlatButton { background: #fccf44; }
+    /* Фон кнопок групп — per-theme screen-CSS. Значения ОБЯЗАНЫ совпадать
+       с group_btn_* палитры (utils.THEMES): после первого наведения курсора
+       _BoldText._apply_leave пишет фон инлайн, и инлайн перебивает этот CSS.
+       Разойдутся — кнопка начнёт «скакать» между двумя цветами.
+       varekai/ikigai: фон = button_bg × 0.25 (как proportion monokai). */
+    .th-varekai GroupRow FlatButton { background: #3F3411; }
     .th-nanita GroupRow FlatButton { background: #79818C; }
     .th-geek_green GroupRow FlatButton { background: #033C1E; }
     .th-blue_fir GroupRow FlatButton { background: #005467; }
     .th-monokai GroupRow FlatButton { background: #3F3309; }
-    .th-ikigai GroupRow FlatButton { background: #BD93F9; }
+    .th-ikigai GroupRow FlatButton { background: #392C4B; }
     /* Кнопки выбора тем: фон ЧЕРЕЗ CSS (инлайн глушил :hover) */
     .thbtn-varekai { background: #fccf44; }
     .thbtn-nanita { background: #FFFFFF; }
@@ -528,7 +526,7 @@ class VarekaiApp(App):
                 yield Static(t("log_app"), id="log_title")
                 with Container(id="log_frame"):
                     yield SelectableRichLog(id="brief_log", max_lines=1000, wrap=True, markup=True,
-                                  on_copy=self._on_log_copied)
+                                            on_copy=self._on_log_copied)
             with Container(classes="panel right-panel"):
                 with Horizontal(classes="groups-title-row"):
                     yield Static(t("groups_title"), id="groups_title")
@@ -553,6 +551,7 @@ class VarekaiApp(App):
         self._group_by_button = {}
         self._seen_errors = set()
         self._groups_order = get_proxy_groups_order()
+        self._ping_busy = False  # защита от повторного запуска теста задержек
         self.log_source = "app"
         self._app_buf = deque(maxlen=1000)
         self._core_buf = deque(maxlen=1000)
@@ -789,7 +788,7 @@ class VarekaiApp(App):
                 pass
         # Лог, список нод и таблица соединений — ЕДИНЫЙ tech_bg; текст
         # в них — tech_text. Инлайн: токены $background/$surface при
-        # смене темы залипают. Скроллбары — палитра кнопок групп.
+        # смене темы залипают. Скроллбары — палитра group_bg/group_text.
         try:
             log = self.query_one("#brief_log")
             log.styles.background = th["tech_bg"]
@@ -805,6 +804,13 @@ class VarekaiApp(App):
         for widget in self.query(_BoldText):
             try:
                 widget._sync_bold_text()
+            except Exception:
+                pass
+        # Фон кнопок групп: _sync_bold_text красит только ТЕКСТ. Без этого
+        # прохода фон оставался бы от прежней темы до первого наведения.
+        for row in self.query(GroupRow):
+            try:
+                row._apply_button_bg()
             except Exception:
                 pass
         # Выделенные строки соединений — перекраска под тему
@@ -894,7 +900,6 @@ class VarekaiApp(App):
                 self.brief_log, f"[bold {_lc(False)}]{t('core_running_update')}[/]"
             )
             return
-
         self.call_from_thread(self.brief_log, t("brief_checking"))
         core_status, msg = update_core()
         if core_status == 0:
@@ -908,34 +913,35 @@ class VarekaiApp(App):
         else:
             self._log_result(False, msg)
             return
-
         self.call_from_thread(self.brief_log, t("brief_updating_profile"))
         profile_status, msg = update_profile()
         self._log_result(profile_status == 1, msg)
-
         self.call_from_thread(self._reload_groups_order)
         self.call_from_thread(self.brief_log, t("brief_starting"))
         ok, msg = start_vpn()
         self._log_result(ok, msg)
         self.call_from_thread(self.update_status)
-
         if ok:
             self.call_from_thread(self.brief_log, t("brief_updating_rules"))
             ok_rules = self._update_rule_providers_sync()
+            # th читается ДО ветвления: раньше он присваивался только
+            # внутри if, и ветка else падала с UnboundLocalError
+            th = get_theme_colors()
             if ok_rules:
-                th = get_theme_colors()
                 self.call_from_thread(self.brief_log, f"[bold {th['log_ok']}]{t('rule_providers_ok')}[/]")
             else:
                 self.call_from_thread(self.brief_log, f"[bold {th['log_err']}]{t('rule_providers_fail')}[/]")
 
     def _update_rule_providers_sync(self) -> bool:
         """Обновляет все rule-providers с атомарным бэкапом:
+
         1. Перемещает старые файлы http-провайдеров в providers-old.
         2. PUT /providers/rules/{имя} — ядро скачивает заново.
         3. Проверяет, что файлы появились, не пустые, не HTML.
         4. Fallback: если файл не появился — скачиваем напрямую.
         5. Если все провайдеры валидны — удаляем providers-old.
            Иначе — откатываем провайдеры из providers-old обратно.
+
         Возвращает True, если все провайдеры обновились успешно."""
         import os
         import tempfile
@@ -1173,49 +1179,130 @@ class VarekaiApp(App):
         self._groups_sig = None
 
     async def _test_group_delay(self, group: str = "") -> None:
-        """Тест задержек. С пустым group — ВСЕ selector-группы (кнопка
-        «Проверить пинг», как test-all в zashboard); с группой — только
-        она. Ядро обновляет history узлов, в конце точечное обновление."""
+        """Кнопка «Проверить пинг». Повторный запуск, пока тест идёт,
+        игнорируется: два клика раньше давали два полных прогона."""
+        if self._ping_busy:
+            return
+        self._ping_busy = True
+        btn = None
+        try:
+            btn = self.query_one("#btn_ping", FlatButton)
+            btn.disabled = True
+        except Exception:
+            btn = None
+        try:
+            await self._run_delay_test(group)
+        except Exception:
+            self._report_error("delay_test")
+        finally:
+            self._ping_busy = False
+            if btn is not None:
+                try:
+                    btn.disabled = False
+                except Exception:
+                    pass
+
+    async def _run_delay_test(self, group: str) -> None:
         proxies0 = await self.api.get_proxies()
         if not proxies0:
             self.brief_log(t("delay_test_fail"))
             return
-        if group:
-            groups = [group]
-        else:
-            groups = [
-                g for g in self._ordered_groups(proxies0)
-                if str(proxies0.get(g, {}).get("type", "")).lower() in ("selector", "select")
-            ]
-        # Каждая нода пингуется РОВНО ОДИН раз, независимо от того, в
-        # скольких группах состоит: результат пишется в её history и
-        # подхватывается всеми группами.
-        nodes, seen = [], set()
-        for g in groups:
-            for n in proxies0.get(g, {}).get("all", []):
-                if n not in seen:
-                    seen.add(n)
-                    nodes.append(n)
+        # Все группы, а не только selector: узлы smart/url-test тоже нужны.
+        groups = [group] if group else self._ordered_groups(proxies0)
+        nodes = self._testable_nodes(proxies0, groups)
         if not nodes:
             self.brief_log(t("delay_test_fail"))
             return
-        self.brief_log(t("delay_testing", group=", ".join(map(replace_flag_emojis, groups))))
-        ok = 0
-        for node in nodes:
-            d = await self.api.proxy_delay(node, timeout_ms=4000)
-            name = replace_flag_emojis(node)
-            if d:
-                ok += 1
-                self.brief_log(f"[bold {_lc(True)}· {name} — {d}ms[/]")
-            else:
-                self.brief_log(f"[bold {_lc(False)}]· {name} — N/A[/]")
-        self.brief_log(t("delay_test_done", ok=ok, total=len(nodes)))
+        # testUrl из /proxies — живое значение ядра, точнее файла профиля.
+        url = ""
+        for g in groups:
+            url = str(proxies0.get(g, {}).get("testUrl") or "")
+            if url:
+                break
+        if not url:
+            url = get_delay_test_url()
+        self.brief_log(
+            t("delay_testing", group=", ".join(map(replace_flag_emojis, groups)))
+        )
+        started = time.monotonic()
+        results = await self._probe_nodes(nodes, url, PING_TIMEOUT_MS)
+        # Один повтор только для N/A и только если живо хоть что-то:
+        # гасит ложноотрицательные, не удваивая время теста.
+        failed = [n for n in nodes if not results.get(n)]
+        if failed and len(failed) < len(nodes):
+            retry = await self._probe_nodes(
+                failed, url, PING_RETRY_TIMEOUT_MS, report=False
+            )
+            for node, delay in retry.items():
+                if delay:
+                    results[node] = delay
+                    self._log_node_delay(node, delay)
+        ok = sum(1 for n in nodes if results.get(n))
+        elapsed = time.monotonic() - started
+        self.brief_log(
+            t("delay_test_done", ok=ok, total=len(nodes)) + f" · {elapsed:.1f}s"
+        )
         try:
             proxies = await self.api.get_proxies()
             if proxies:
                 await self._refresh_groups_ui(proxies)
         except Exception:
             self._report_error("ping_refresh")
+
+    async def _probe_nodes(self, nodes, url, timeout_ms, report=True):
+        """Параллельный прогон узлов с ограничением одновременных запросов."""
+        sem = asyncio.Semaphore(PING_CONCURRENCY)
+
+        async def probe(node):
+            async with sem:
+                return node, await self.api.proxy_delay(
+                    node, timeout_ms=timeout_ms, url=url
+                )
+
+        results = {}
+        tasks = [asyncio.create_task(probe(n)) for n in nodes]
+        try:
+            for fut in asyncio.as_completed(tasks):
+                node, delay = await fut
+                results[node] = delay
+                if report:
+                    self._log_node_delay(node, delay)
+        finally:
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+        return results
+
+    def _log_node_delay(self, node: str, delay) -> None:
+        # Экранирование '[': replace_flag_emojis даёт [RU], а Rich
+        # съедал это как тег разметки — флаги в логе пропадали.
+        name = replace_flag_emojis(node).replace("[", "\\[")
+        value = f"{delay}ms" if delay else "N/A"
+        self.brief_log(f"[bold {_lc(bool(delay))}]· {name} — {value}[/]")
+
+    @staticmethod
+    def _testable_nodes(proxies: dict, groups: list) -> list:
+        """Уникальные имена РЕАЛЬНЫХ узлов из указанных групп.
+
+        Вложенные группы исключаем: /proxies/{group}/delay прогоняет всех
+        её членов повторно — это и был источник дублей. Служебные прокси
+        (DIRECT/REJECT/PASS/...) всегда дают N/A: в тест их брать нельзя."""
+        skip = {"direct", "reject", "reject-drop", "pass", "compatible", "dns"}
+        nodes, seen = [], set()
+        for g in groups:
+            for name in proxies.get(g, {}).get("all", []) or []:
+                if name in seen:
+                    continue
+                seen.add(name)
+                data = proxies.get(name)
+                if not isinstance(data, dict):
+                    continue
+                if isinstance(data.get("all"), list):
+                    continue
+                if str(data.get("type", "")).lower() in skip:
+                    continue
+                nodes.append(name)
+        return nodes
 
     def _update_ui_texts(self):
         self.query_one("#btn_update_run", FlatButton).update_text(
@@ -1298,6 +1385,7 @@ class VarekaiApp(App):
         молча не обновлялся. Показываем в лог приложения один раз на
         каждый тип, с местом и текстом."""
         import traceback
+
         try:
             last = traceback.format_exc(limit=3).strip().splitlines()[-1]
         except Exception:

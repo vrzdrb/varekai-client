@@ -45,7 +45,6 @@ CONFIG_CLEAN = APP_DIR / "config.yaml"
 CONFIG_SMART = APP_DIR / "smart-config.yaml"
 MIRRORS_FILE = APP_DIR / "mirrors.txt"
 SETTINGS_FILE = APP_DIR / "settings.json"
-
 CORE_REPO = "legiz-ru/Prizrak-Core"
 MAX_ARCHIVES = 3
 FORCE_ADMIN_AT_START = True
@@ -95,6 +94,7 @@ DEFAULT_SETTINGS = {"language": "ru", "theme": "ikigai"}
 THEMES = {
     # Имя НЕ «default»: оно служебное в Textual (self.theme = "default"
     # включает встроенную тему и игнорирует зарегистрированную).
+    #
     # Ключи: кнопки (button_*, button_hover), кнопки групп
     # (group_bg/group_text — у nanita отличаются от button_*),
     # выделение строк (select_bg/select_text), тех. окна (tech_*):
@@ -104,6 +104,12 @@ THEMES = {
     # Строка подсказок (footer_bg/footer_key/footer_hint) — основное окно
     # и окно соединений читают одни ключи. Окно отката: rollback_title/
     # rollback_item. Статусная строка VPN не темится.
+    #
+    # group_btn_* — ОТДЕЛЬНАЯ пара только для кнопок групп, задана у
+    # varekai и ikigai. Остальные темы ключей не имеют и через
+    # get_group_button_colors() получают прежние group_bg/group_text.
+    # Менять group_bg/group_text ради кнопок групп НЕЛЬЗЯ: ими красятся
+    # ползунки всех скроллов и поля ввода окна маршрутизации.
     "varekai": {
         "footer_bg": "#615E68",   # фон строки подсказок (+25%)
         "footer_key": "#fccf44",  # текст клавиш
@@ -114,6 +120,12 @@ THEMES = {
         "label": {"ru": "Varekai", "en": "Varekai"},
         "button_bg": "#fccf44", "button_text": "#1a1a1a", "button_hover": "#FCDB73",
         "group_bg": "#fccf44", "group_text": "#1a1a1a",
+        # Кнопки групп: текст = фон кнопки «Логи» (button_bg), фон = тот же
+        # жёлтый, затемнённый ровно на 75% (V 98.8% -> 24.7%, оттенок и
+        # насыщенность сохранены — умножение RGB на 0.25). Пропорция снята
+        # с monokai: group_text #FCD13A -> group_bg #3F3309.
+        # hover = фон × 1.75, как monokai #3F3309 -> #6E5A12.
+        "group_btn_bg": "#3F3411", "group_btn_text": "#fccf44", "group_btn_hover": "#6E5B1E",
         "select_bg": "#FDDB73", "select_text": "#1a1a1a",
         "tech_bg": "#2C2936", "tech_text": "#ffffff",
         "fill_bg": "#2C2936", "panel_bg": "#2C2936", "bar_bg": "#2C2936",
@@ -195,8 +207,19 @@ THEMES = {
         "label": {"ru": "Ikigai", "en": "Ikigai"},
         "button_bg": "#BD93F9", "button_text": "#282A36", "button_hover": "#D0BFFF",
         "group_bg": "#BD93F9", "group_text": "#282A36",
+        # Кнопки групп: 30% яркости button_bg, а не 25% как у varekai/monokai.
+        # На 25% (#2F253E) фон кнопки почти совпадал с фоном окна групп
+        # (#30323E): разница по каналам была всего 13 единиц, и только по
+        # зелёному. Сейчас 25 единиц по красному и синему — кнопка читается
+        # как фиолетовая на серо-синем поле.
+        # hover НЕ поднимался вместе с базой: ×1.75 от новой базы дал бы
+        # контраст текста 2.97:1 вместо прежних 3.73:1.
+        "group_btn_bg": "#392C4B", "group_btn_text": "#BD93F9", "group_btn_hover": "#52416D",
         "select_bg": "#CEAEFA", "select_text": "#282A36",
-        "tech_bg": "#30323E", "tech_text": "#8BE9FD",
+        # tech_bg на 20% темнее прежнего #30323E. Ключ ЕДИНЫЙ для списка
+        # нод, окна лога и таблицы соединений — они темнеют вместе, как и
+        # задумано архитектурой палитры.
+        "tech_bg": "#262832", "tech_text": "#8BE9FD",
         "fill_bg": "#282A36", "panel_bg": "#282A36", "bar_bg": "#34354A",
         "fill_text": "#F8F8F2",
         "log_ok": "#34C421", "log_err": "#F50A0A",
@@ -209,17 +232,17 @@ def get_theme_name():
         if SETTINGS_FILE.exists():
             with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
                 name = json.load(f).get("theme", "ikigai")
-                if name == "default":
-                    name = "varekai"  # старое служебное имя
-                elif name in ("dracula", "black_on_white", "meshtastic", "nicedark"):
-                    # темы переименованы: старые ключи из settings.json читаем
-                    name = {
-                        "dracula": "ikigai",
-                        "black_on_white": "nanita",
-                        "meshtastic": "geek_green",
-                        "nicedark": "blue_fir",
-                    }[name]
-                return name if name in THEMES else "ikigai"
+            if name == "default":
+                name = "varekai"  # старое служебное имя
+            elif name in ("dracula", "black_on_white", "meshtastic", "nicedark"):
+                # темы переименованы: старые ключи из settings.json читаем
+                name = {
+                    "dracula": "ikigai",
+                    "black_on_white": "nanita",
+                    "meshtastic": "geek_green",
+                    "nicedark": "blue_fir",
+                }[name]
+            return name if name in THEMES else "ikigai"
     except Exception:
         pass
     return "ikigai"
@@ -229,15 +252,37 @@ def get_theme_colors(name=None):
     return THEMES.get(name or get_theme_name(), THEMES["varekai"])
 
 
+def get_group_button_colors(name=None, th=None) -> tuple:
+    """(фон, текст, hover-фон) для КНОПОК ГРУПП.
+
+    Ключи group_btn_* заданы только у varekai и ikigai. Остальные темы
+    получают прежнюю пару group_bg/group_text + button_hover, поэтому
+    их вид не меняется вообще.
+
+    th — уже прочитанная палитра: get_theme_name() читает settings.json
+    с диска при каждом вызове, передавайте th, чтобы не удваивать I/O
+    на каждое наведение курсора.
+    """
+    if th is None:
+        th = get_theme_colors(name)
+    return (
+        th.get("group_btn_bg") or th["group_bg"],
+        th.get("group_btn_text") or th["group_text"],
+        th.get("group_btn_hover") or th["button_hover"],
+    )
+
+
 def get_modal_chrome() -> dict:
     """Фон, рамка и текст модальных окон (выбор темы/ядра, выход).
     Единая точка — все три окна красятся из одного места.
+
     Nanita — светлая: фон = tech_bg (серый, как окно лога), рамка чёрная,
     текст = fill_bg (тёмно-серо-синий, как фон основного окна)."""
     th = get_theme_colors()
     if get_theme_name() == "nanita":
         return {"bg": th["tech_bg"], "border": "#000000", "text": th["fill_bg"]}
     return {"bg": th["panel_bg"], "border": th["frame_color"], "text": th["fill_text"]}
+
 
 # === ЛОКАЛИЗАЦИЯ ===
 STRINGS = {
@@ -357,7 +402,7 @@ STRINGS = {
         "routing_clear": "Удалить все добавленные правила",
         "routing_exit": "Выход",
         "routing_what": "Что хотите маршрутизировать?",
-        "routing_domain_suffix": "Домен +все поддомены",
+        "routing_domain_suffix": "Домен + все поддомены",
         "routing_domain": "Один домен",
         "routing_ip": "IPv4-адрес/подсеть",
         "routing_process": "Процесс",
@@ -571,6 +616,7 @@ def t(key, **kwargs):
 def _windows_cpuid():
     """Возвращает callable cpuid(leaf, subleaf) -> (eax, ebx, ecx, edx)
     через исполняемую страницу памяти (ctypes, без внешних утилит).
+
     Windows x64 ABI: аргументы в RCX, RDX, R8."""
     import ctypes
 
@@ -706,7 +752,7 @@ def restart_as_admin():
             shell_cmd = " ".join(
                 [shlex.quote(sys.executable)] + [shlex.quote(a) for a in sys.argv]
             )
-            applescript_cmd = shell_cmd.replace("\\", "\\\\").replace('"', '\\"')
+            applescript_cmd = shell_cmd.replace(" ", "\\ ").replace('"', '\\"')
             subprocess.Popen([
                 "osascript", "-e",
                 f'do shell script "{applescript_cmd}" with administrator privileges'
@@ -746,6 +792,7 @@ def save_settings(settings):
 
 def copy_to_clipboard(text: str) -> bool:
     """Кросс-платформенное копирование в буфер обмена.
+
     Сначала нативные механизмы ОС; если их нет — OSC52 (escape-
     последовательность, которую терминал кладёт в системный буфер сам).
     Возвращает True, если текст отправлен в буфер."""
@@ -800,10 +847,13 @@ def copy_to_clipboard(text: str) -> bool:
 
 
 def apply_scrollbar_palette(widget) -> None:
-    """Ползунки скроллбара — по палитре кнопок групп: фон ползунка =
+    """Ползунки скроллбара — по палитре group_bg/group_text: фон ползунка =
     group_bg, hover/перетаскивание = group_text. Единая точка для всех
-    скроллов (лог, группы, соединения, откат) — инлайн, т.к. токены
-    $primary/$warning при смене темы залипают."""
+    скроллов (лог, группы, соединения, откат, маршрутизация) — инлайн,
+    т.к. токены $primary/$warning при смене темы залипают.
+
+    Читает именно group_bg/group_text, а НЕ group_btn_*: кнопки групп
+    в varekai/ikigai потемнели, ползунки обязаны остаться прежними."""
     th = get_theme_colors()
     try:
         widget.styles.scrollbar_color = th["group_bg"]
@@ -818,6 +868,7 @@ def setup_console():
         return
     try:
         import ctypes
+
         kernel32 = ctypes.windll.kernel32
         kernel32.SetConsoleOutputCP(65001)
         kernel32.SetConsoleCP(65001)
@@ -825,7 +876,6 @@ def setup_console():
         mode = ctypes.c_ulong()
         if kernel32.GetConsoleMode(handle, ctypes.byref(mode)):
             kernel32.SetConsoleMode(handle, mode.value | 0x0004)
-
         # Прячем мигающий текстовый курсор (иначе в углу TUI моргает "_")
         class _CURSORINFO(ctypes.Structure):
             _fields_ = [("dwSize", ctypes.c_ulong), ("bVisible", ctypes.c_bool)]
@@ -834,7 +884,6 @@ def setup_console():
         if kernel32.GetConsoleCursorInfo(handle, ctypes.byref(info)):
             info.bVisible = False
             kernel32.SetConsoleCursorInfo(handle, ctypes.byref(info))
-
         # Разворачиваем окно консоли на весь экран (best effort: в Windows
         # Terminal просто не сработает — размер панели задаётся самим WT)
         try:
@@ -853,11 +902,11 @@ def setup_console():
 # Диапазоны эмодзи/сервисных символов, вычищаемых на Windows
 # (классическая консоль их не рендерит — рисуются пустые квадраты).
 # Стрелки (2190-21FF) и геометрические фигуры (25A0-25FF) НЕ трогаем:
-# используются в разметке интерфейса (→, ■) и рисуются везде.
+# используются в разметке интерфейса (→, ■, ●) и рисуются везде.
 _EMOJI_STRIP_RANGES = (
     (0x1F000, 0x1FAFF),  # пиктограммы, флаги-индикаторы, 🅰️ и пр.
     (0x2300, 0x23FF),    # misc technical: ⌚ ⌛ ⏰ ...
-    (0x2600, 0x26FF),    # misc symbols: ✅ ⚡ ⭐ ...
+    (0x2600, 0x26FF),    # misc symbols: ✅ ⚡ ⭐ ♻ ...
     (0x2700, 0x27BF),    # dingbats: ✂ ✉ ...
     (0x2B00, 0x2BFF),    # ⭐ ⬆ и пр.
     (0xFE00, 0xFE0F),    # variation selectors
@@ -870,6 +919,7 @@ def replace_flag_emojis(text: str) -> str:
     """На Windows: флаги (пары региональных индикаторов) заменяет на
     текстовые коды стран вроде [CZ], остальные эмодзи вычищает —
     классическая консоль Windows их не рендерит.
+
     Устойчив к вариантному селектору FE0F между/после индикаторами."""
     if get_os() != "windows":
         return text
@@ -915,7 +965,6 @@ def replace_flag_emojis(text: str) -> str:
                     continue
         out.append(text[i])
         i += 1
-
     result = "".join(out)
     return "".join(
         ch for ch in result

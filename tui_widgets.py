@@ -1,6 +1,7 @@
 """
 Общие helper-функции форматирования и переиспользуемые виджеты TUI.
 """
+
 import re
 
 from rich.segment import Segment
@@ -12,7 +13,12 @@ from textual.containers import Container
 from textual.widget import Widget
 from textual.widgets import Button, RichLog, Static
 
-from utils import copy_to_clipboard, get_theme_colors, replace_flag_emojis
+from utils import (
+    copy_to_clipboard,
+    get_group_button_colors,
+    get_theme_colors,
+    replace_flag_emojis,
+)
 
 try:
     from textual.strip import Strip
@@ -78,6 +84,14 @@ class _BoldText(Static):
     def _apply_enter(self) -> None:
         if self.has_class(*self.HOVER_CLASSES):
             th = get_theme_colors()
+            if self.has_class("group-btn"):
+                # Кнопки групп: hover остаётся тёмным, текст — светлым.
+                # button_hover/button_text здесь неприменимы: у varekai
+                # это светлый фон и ЧЁРНЫЙ текст (был бы невидим).
+                _, text, hover = get_group_button_colors(th=th)
+                self.styles.background = self._hover_bg or hover
+                self._sync_bold_text(color=self._hover_text or text)
+                return
             self.styles.background = self._hover_bg or th["button_hover"]
             ht = self._hover_text or th.get("button_hover_text") or th["button_text"]
             self._sync_bold_text(color=ht)
@@ -85,9 +99,11 @@ class _BoldText(Static):
     def _apply_leave(self) -> None:
         if self.has_class(*self.HOVER_CLASSES):
             th = get_theme_colors()
-            # Кнопки групп возвращаются на group_bg: у blue_fir он светлее
-            # button_bg, у nanita серый; в остальных темах они равны.
-            base = th["group_bg"] if self.has_class("group-btn") else th["button_bg"]
+            # Инлайн-фон перебивает любой CSS, включая per-theme hex:
+            # значение обязано совпадать с ним, иначе кнопка «скачет»
+            # между старым и новым цветом после первого наведения.
+            base = (get_group_button_colors(th=th)[0] if self.has_class("group-btn")
+                    else th["button_bg"])
             self.styles.background = base
             self._sync_bold_text()
 
@@ -95,8 +111,11 @@ class _BoldText(Static):
         text = self._bold_text
         plain = text.plain if isinstance(text, Text) else str(text)
         th = get_theme_colors()
-        # Кнопки групп читают group_text (nanita — белый), прочие — button_text
-        base_text = th["group_text"] if self.has_class("group-btn") else th["button_text"]
+        # Стиль внутри Text перебивает CSS-цвет виджета — это единственный
+        # работающий слой для текста кнопок. Правила вида '.btn-action .fb-a'
+        # не матчат ничего: дочернего Static у _BoldText нет.
+        base_text = (get_group_button_colors(th=th)[1] if self.has_class("group-btn")
+                     else th["button_text"])
         color = color or self._color or base_text
         self.update(Text(plain, style=f"bold {color}"))
 
@@ -286,7 +305,9 @@ class NodeRow(Widget):
             self.styles.background = th["button_hover"]
             for cls in ("node-name", "node-delay", "node-status"):
                 try:
-                    self.query_one(f".{cls}", Static).styles.color = th.get("button_hover_text") or th["button_text"]
+                    self.query_one(f".{cls}", Static).styles.color = (
+                        th.get("button_hover_text") or th["button_text"]
+                    )
                 except Exception:
                     pass
         else:
@@ -335,7 +356,7 @@ class NodeRow(Widget):
 
 
 class GroupRow(Widget):
-    """Группа прокси: жёлтая кнопка (FlatButton — тот же проверенный путь
+    """Группа прокси: кнопка (FlatButton — тот же проверенный путь
     клика, что у главных кнопок) + опциональный список нод под ней.
     Клик по кнопке раскрывает/скрывает список (аккордеон)."""
 
@@ -346,10 +367,12 @@ class GroupRow(Widget):
         width: 100%;
         margin: 0 0 1 0;
     }
-    /* Выпавший список нод: фон/текст как в таблице соединений (#1a0a30) */
+    /* Выпавший список нод: фон/текст как в таблице соединений */
     /* Высоту даёт проверенное правило, фон списка — чистый класс */
     GroupRow.open { height: auto; }
     .group-open { background: $background; }
+    /* Нижний слой фона кнопки. Перебивается per-theme CSS главного
+       экрана и инлайном _apply_button_bg — здесь только fallback. */
     GroupRow FlatButton {
         width: 100%; height: 2;
         background: $primary;
@@ -371,6 +394,20 @@ class GroupRow(Widget):
 
     def compose(self) -> ComposeResult:
         yield FlatButton(Text(self._label), id=self._button_id, classes="group-btn btn-action")
+
+    def on_mount(self) -> None:
+        # call_after_refresh: в on_mount дочерний FlatButton может быть
+        # ещё не смонтирован, query_one бросил бы NoMatches.
+        self.call_after_refresh(self._apply_button_bg)
+
+    def _apply_button_bg(self) -> None:
+        """Фон кнопки группы — инлайн из палитры. Слой выше любого CSS,
+        поэтому результат не зависит от приоритета DEFAULT_CSS/App-CSS
+        и от того, был ли уже hover. Вызывается и при смене темы."""
+        try:
+            self.query_one(FlatButton).styles.background = get_group_button_colors()[0]
+        except Exception:
+            pass
 
     def update_label(self, label: str) -> None:
         """Обновить подпись кнопки без пересборки (антимерцание).
@@ -408,7 +445,6 @@ class ConnectionRow(Widget):
         CSS-каскада (ID-правила экрана перебивают классовые)."""
         active = "selected" in self.classes
         th = get_theme_colors()
-        # Фон выделения — select_bg палитры (у nanita он свой, зелёный)
         self.styles.background = th["select_bg"] if active else "transparent"
         text_color = (th.get("select_text") or th["button_text"]) if active else th["tech_text"]
         sep_color = text_color
@@ -525,6 +561,8 @@ class ConnectionRow(Widget):
             self._cells[key].update(Text(str(value)))
         if raw:
             self._raw = raw
+
+
 class SelectableRichLog(RichLog):
     """RichLog с выделением текста мышью (drag) и копированием выделения
     через Ctrl+C. Координаты — в клетках отрендеренных строк (Strip),
@@ -544,7 +582,6 @@ class SelectableRichLog(RichLog):
         self._captured = False
 
     # --- hit-testing ---
-
     def _lines(self):
         return getattr(self, "lines", None) or []
 
@@ -572,7 +609,6 @@ class SelectableRichLog(RichLog):
         return (sel_a, sel_b) if sel_a <= sel_b else (sel_b, sel_a)
 
     # --- подсветка ---
-
     def _paint_selection(self):
         self._restore_strips()
         if not self._sel_anchor or not self._sel_focus:
@@ -632,7 +668,6 @@ class SelectableRichLog(RichLog):
         return super().clear()
 
     # --- мышь ---
-
     def on_mouse_down(self, event) -> None:
         try:
             super().on_mouse_down(event)  # scrollbar-логика ScrollView
@@ -686,14 +721,12 @@ class SelectableRichLog(RichLog):
         self._sel_focus = None
 
     # --- копирование ---
-
     @staticmethod
     def _slice_cells(text, start, end):
         """Срез строки по КЛЕТКАМ терминала (wide-символы = 2 клетки)."""
         if end <= start:
             return ""
         from rich.cells import cell_width
-
         out = []
         cell = 0
         for ch in text:

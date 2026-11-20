@@ -1,6 +1,7 @@
 """
 Модальное окно активных подключений.
 """
+
 import asyncio
 import time
 
@@ -13,7 +14,14 @@ from textual.widgets import Static
 
 from clash_api import ClashAPI
 from tui_widgets import CloseAllCell, ConnectionRow, HeaderCell, fmt_bytes, fmt_speed
-from utils import apply_scrollbar_palette, get_os, load_settings, replace_flag_emojis, save_settings, t
+from utils import (
+    apply_scrollbar_palette,
+    get_os,
+    load_settings,
+    replace_flag_emojis,
+    save_settings,
+    t,
+)
 
 CONN_POLL_INTERVAL = 0.2  # 5 раз в секунду
 
@@ -67,7 +75,7 @@ class ConnectionsScreen(ModalScreen):
     #hdr_ds, #hdr_dt, #hdr_us, #hdr_ut {
         text-align: center;
     }
-    #conn_scroll Static { text-style: none; }  /* таблица — нежирная, остальной текст жирный */
+    #conn_scroll Static { text-style: none; }  /* таблица — нежирная */
     #conn_scroll .close-x {
         width: 3; height: 1;
         background: #F50A0A; color: $secondary;
@@ -186,7 +194,6 @@ class ConnectionsScreen(ModalScreen):
             # Токен $accent в Textual 8 залипает — фиксируем инлайн:
             # заголовок = tech_text; nanita — белый (tech_text там чёрный,
             # на тёмном фоне окна не читается)
-            from utils import get_theme_name
             title_color = th["fill_text"] if get_theme_name() == "nanita" else th["tech_text"]
             self.query_one(".conn-title", Static).styles.color = title_color
         except Exception:
@@ -314,7 +321,6 @@ class ConnectionsScreen(ModalScreen):
             return str(val)
 
         rows_data.sort(key=lambda x: sort_key(x), reverse=reverse)
-
         # move_child требует явного before/after: первую строку — в начало,
         # каждую следующую — после предыдущей.
         prev = None
@@ -336,22 +342,31 @@ class ConnectionsScreen(ModalScreen):
         return (rule, host)
 
     async def _group_best_node(self, name: str):
-        """Активная нода группы по тесту задержек — как дашборды
-        (clash-verge/mihomo-party). Нужна для smart-групп, у которых
-        ядро не отдаёт now через /proxies. Кэш 5 с, чтобы не дёргать API
-        на каждый тик обновления окна."""
+        """Активная нода группы по последним ИЗВЕСТНЫМ задержкам.
+
+        Раньше здесь каждые 5 с вызывался /group/{name}/delay: он
+        (а) заново тестировал все узлы группы — второй источник дублей
+        пинга помимо кнопки, и (б) СБРАСЫВАЛ фиксацию выбора в
+        авто-группах (url-test/fallback). Теперь читаем history из уже
+        загруженного /proxies — новых тестов не запускаем.
+
+        Размен: если history пуста (свежий старт ядра), колонка «Сервер»
+        покажет только имя группы. Нажмите «Проверить пинг» — заполнится.
+        """
         key = str(name)
         ts, hit = self._delay_cache.get(key, (0.0, None))
         if hit is not None and time.monotonic() - ts < 5.0:
             return hit
-        best = None
-        try:
-            delays = await self.api.group_delay(key, timeout_ms=3000)
-            alive = {k: v for k, v in delays.items() if isinstance(v, (int, float)) and v > 0}
-            if alive:
-                best = min(alive, key=alive.get)
-        except Exception:
-            pass
+        best, best_delay = None, None
+        for node in (self._proxies_cache.get(key) or {}).get("all", []) or []:
+            hist = (self._proxies_cache.get(node) or {}).get("history") or []
+            if not hist:
+                continue
+            dv = hist[-1].get("delay", 0)
+            if not isinstance(dv, (int, float)) or dv <= 0:
+                continue
+            if best_delay is None or dv < best_delay:
+                best, best_delay = node, dv
         self._delay_cache[key] = (time.monotonic(), best)
         return best
 
@@ -359,7 +374,7 @@ class ConnectionsScreen(ModalScreen):
         """Цепочка выбора: PROXY -> подгруппа (Smart/Автовыбор) -> нода.
         Реальные ноды в /proxies не имеют поля now — цикл остановится сам,
         множество seen страхует от кольцевых настроек. Для групп без now
-        (smart в некоторых сборках ядра) ноду определяем тестом задержек."""
+        (smart в некоторых сборках ядра) ноду берём из известных задержек."""
         chain = []
         seen = set()
         name = str(name)
@@ -368,7 +383,6 @@ class ConnectionsScreen(ModalScreen):
             chain.append(name)
             now = (self._proxies_cache.get(name) or {}).get("now")
             if not now or now == name:
-                # smart-группа без now — активную ноду узнаём по задержкам
                 if (self._proxies_cache.get(name) or {}).get("all"):
                     best = await self._group_best_node(name)
                     if best and best != name:
@@ -496,7 +510,8 @@ class ConnectionsScreen(ModalScreen):
                 # после обработки всего пакета (убран race incremental-insert)
                 await self._scroll.mount(row)
                 self._rows[cid] = row
-            row.set_data(host, sport_txt, dport_txt, server, rule_txt, ds_txt, fmt_bytes(dl), us_txt, fmt_bytes(ul), raw_data)
+            row.set_data(host, sport_txt, dport_txt, server, rule_txt, ds_txt,
+                         fmt_bytes(dl), us_txt, fmt_bytes(ul), raw_data)
             self._prev[cid] = (dl, ul, now)
         for cid in list(self._rows.keys()):
             if cid not in cur_ids:

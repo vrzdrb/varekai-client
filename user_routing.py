@@ -1,9 +1,13 @@
 """
 Хранение и интеграция пользовательских правил маршрутизации.
+
 Правила хранятся в user-rules.yaml и встраиваются в smart-config.yaml
-при генерации: DIRECT — до провайдерских правил, PROXY — после них,
-но до MATCH.
+при генерации ЕДИНЫМ блоком перед провайдерскими правилами, до MATCH.
+Порядок внутри блока = порядок в user-rules.yaml = номера в окне
+маршрутизации: пользовательские правила перекрывают провайдерские.
 """
+
+import ipaddress
 from pathlib import Path
 
 from ruamel.yaml import YAML
@@ -50,38 +54,53 @@ def save_user_rules(rules: list) -> bool:
 
 def build_rule_line(rule: dict) -> str:
     """Преобразует правило в строку формата mihomo.
+
     rule: {type, target, proxy}
-    Возвращает: 'DOMAIN-SUFFIX,example.com,DIRECT' и т.п."""
-    rtype = rule.get("type", "")
-    target = rule.get("target", "")
-    proxy = rule.get("proxy", "DIRECT")
+    Возвращает: 'DOMAIN-SUFFIX,example.com,DIRECT' и т.п.
+    """
+    rtype = str(rule.get("type", "")).strip()
+    target = str(rule.get("target", "")).strip()
+    proxy = str(rule.get("proxy", "DIRECT")).strip()
     return f"{rtype},{target},{proxy}"
 
 
 def format_ip_rule(target: str) -> str:
     """Приводит IP-адрес или подсеть к формату IP-CIDR mihomo.
-    Одиночный адрес 192.168.1.1 -> 192.168.1.1/32.
-    Подсеть 192.168.1.0/24 остаётся как есть."""
+
+    Одиночный IPv4 192.168.1.1 -> 192.168.1.1/32.
+    Подсеть 192.168.1.0/24 остаётся как есть.
+
+    IPv6 и не-IP возвращаются без изменений: раньше к ним приписывалось
+    /32, что давало заведомо битое правило (2a00::1/32) и молчаливый
+    отказ ядра применять конфиг.
+    """
     target = target.strip()
     if "/" in target:
         return target
-    return f"{target}/32"
+    try:
+        if ipaddress.ip_address(target).version == 4:
+            return f"{target}/32"
+    except ValueError:
+        pass
+    return target
 
 
 def format_process_rule(target: str) -> str:
     """Приводит имя процесса к формату PROCESS-NAME-REGEX.
-    Оборачивает в (?i:...) для нечувствительности к регистру."""
+
+    Оборачивает в (?i:...) для нечувствительности к регистру и
+    экранирует точки, иначе '.' в regex означает «любой символ».
+    """
     target = target.strip()
-    # Убираем расширение .exe если пользователь его добавил
+    # Убираем расширение .exe, если пользователь его добавил
     if target.lower().endswith(".exe"):
         target = target[:-4]
-    # Экранируем точки в имени процесса
     escaped = target.replace(".", r"\.")
     return f"(?i:{escaped})"
 
 
 def add_rule(rule_type: str, target: str, proxy: str) -> dict:
-    """Создаёт и сохраняет новое правило. Возвращает rule- dict."""
+    """Создаёт и сохраняет новое правило. Возвращает rule-dict."""
     if rule_type == "IP-CIDR":
         target = format_ip_rule(target)
     elif rule_type == "PROCESS-NAME-REGEX":
@@ -94,7 +113,7 @@ def add_rule(rule_type: str, target: str, proxy: str) -> dict:
 
 
 def remove_rule(index: int) -> bool:
-    """Удаляет правило по индексу."""
+    """Удаляет правило по индексу (0-based). Номер в UI = index + 1."""
     rules = load_user_rules()
     if 0 <= index < len(rules):
         rules.pop(index)
@@ -107,31 +126,24 @@ def clear_rules() -> bool:
     return save_user_rules([])
 
 
-def inject_into_config(config_lines: list, direct_rules: list, proxy_rules: list) -> list:
-    """Вставляет пользовательские правила в массив rules конфига.
-    direct_rules — строки 'TYPE,target,DIRECT' (в начало, до провайдерских).
-    proxy_rules — строки 'TYPE,target,PROXY' (перед MATCH, после провайдерских).
-    Возвращает новый список строк rules."""
-    if not direct_rules and not proxy_rules:
-        return config_lines
-
-    # Разделяем: провайдерские правила (всё кроме MATCH) и финальный MATCH
-    provider_lines = []
-    match_lines = []
+def inject_user_rules(config_lines: list, rule_lines: list) -> list:
+    """Вставляет пользовательские правила ЕДИНЫМ блоком перед
+    провайдерскими. Порядок внутри блока = порядок в user-rules.yaml
+    = номера в списке окна маршрутизации. MATCH остаётся последним."""
+    if not rule_lines:
+        return list(config_lines)
+    provider_lines, match_lines = [], []
     for line in config_lines:
-        stripped = line.strip()
+        stripped = str(line).strip()
         if stripped.startswith("MATCH,") or stripped == "MATCH":
             match_lines.append(line)
         else:
             provider_lines.append(line)
+    return list(rule_lines) + provider_lines + match_lines
 
-    result = []
-    # 1. Правила DIRECT пользователя (до провайдерских)
-    result.extend(direct_rules)
-    # 2. Провайдерские правила
-    result.extend(provider_lines)
-    # 3. Правила PROXY пользователя (после провайдерских, до MATCH)
-    result.extend(proxy_rules)
-    # 4. MATCH
-    result.extend(match_lines)
-    return result
+
+def inject_into_config(config_lines: list, direct_rules: list, proxy_rules: list) -> list:
+    """Совместимая обёртка: сигнатура сохранена для существующих вызовов
+    и тестов. Оба блока теперь идут ДО провайдерских правил —
+    пользовательские перекрывают провайдерские, а не наоборот."""
+    return inject_user_rules(config_lines, list(direct_rules) + list(proxy_rules))

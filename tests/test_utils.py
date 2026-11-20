@@ -32,3 +32,50 @@ def test_replace_flag_emojis_windows(monkeypatch):
 def test_replace_flag_emojis_non_windows(monkeypatch):
     monkeypatch.setattr(utils, "get_os", lambda: "linux")
     assert utils.replace_flag_emojis("🇺🇸 USA") == "🇺🇸 USA"
+
+
+def test_group_button_colors_fallback_untouched():
+    """Темы без ключей group_btn_* обязаны получить прежнюю пару:
+    это гарантия, что nanita/geek_green/blue_fir/monokai не изменились."""
+    for name in ("nanita", "geek_green", "blue_fir", "monokai"):
+        th = utils.THEMES[name]
+        assert utils.get_group_button_colors(name) == (
+            th["group_bg"], th["group_text"], th["button_hover"]
+        )
+
+
+def test_group_button_colors_varekai_ikigai():
+    """Текст = фон кнопки «Логи»; фон = заданная доля яркости текста."""
+    ratios = {"varekai": 0.25, "ikigai": 0.30}
+    for name, ratio in ratios.items():
+        th = utils.THEMES[name]
+        bg, text, hover = utils.get_group_button_colors(name)
+        assert text == th["button_bg"]
+        assert hover != bg
+        base, dark = th["button_bg"].lstrip("#"), bg.lstrip("#")
+        for i in (0, 2, 4):
+            assert abs(int(dark[i:i + 2], 16) - round(int(base[i:i + 2], 16) * ratio)) <= 1
+
+
+def test_group_button_bg_separable_from_tech_bg():
+    """Фон кнопки группы не должен сливаться с фоном окна групп.
+
+    Меряем разницу по каналам, а не по яркости: у ikigai различие
+    хроматическое (фиолетовая кнопка на серо-синем окне) при почти
+    одинаковой luminance — тест по яркости этот дефект не ловит.
+    Прежняя пара #2F253E / #30323E давала Δ=13 и завалилась бы здесь.
+    """
+    for name in ("varekai", "ikigai"):
+        th = utils.THEMES[name]
+        btn, win = th["group_btn_bg"].lstrip("#"), th["tech_bg"].lstrip("#")
+        delta = max(abs(int(btn[i:i + 2], 16) - int(win[i:i + 2], 16)) for i in (0, 2, 4))
+        assert delta >= 15, f"{name}: кнопка сливается с окном групп (Δ={delta})"
+
+
+def test_scrollbar_palette_not_affected_by_group_buttons():
+    """Ползунки читают group_bg/group_text — они не должны потемнеть
+    вместе с кнопками групп."""
+    for name in ("varekai", "ikigai"):
+        th = utils.THEMES[name]
+        assert th["group_bg"] == th["button_bg"]
+        assert th["group_bg"] != th["group_btn_bg"]

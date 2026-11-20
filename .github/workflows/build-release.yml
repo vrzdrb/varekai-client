@@ -28,7 +28,6 @@ jobs:
           - os: macos-latest
             platform: macos
             arch: arm64
-
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -58,7 +57,10 @@ jobs:
         if: matrix.platform == 'macos'
         shell: bash
         run: |
-          printf '#!/bin/bash\ncd "$(dirname "$0")"\nxattr -cr .\n./Varekai\n' > START.command
+          # sudo -E, а не osascript из main.py: do shell script запускает
+          # процесс с пайпами вместо терминала, и TUI без TTY не поднимется.
+          # Здесь права повышаются в том же терминале, TTY сохраняется.
+          printf '#!/bin/bash\ncd "$(dirname "$0")" || exit 1\nchmod +x ./Varekai 2>/dev/null\nxattr -dr com.apple.quarantine . 2>/dev/null\nexec sudo -E ./Varekai\n' > START.command
           chmod +x START.command
 
       - name: Embed version into build
@@ -79,19 +81,59 @@ jobs:
         shell: bash
         run: |
           if [ "${{ matrix.platform }}" = "macos" ]; then
-            # macOS: один бинарник (нет сломанных symlinks в .framework),
-            # self-sign чтобы Gatekeeper не ругался «повреждено»
-            pyinstaller --onefile --name Varekai --hidden-import _build_version --icon app.ico main.py
+            # onedir: у onefile внутренние библиотеки распаковываются во
+            # временный каталог, что добавляет проблем с подписью.
+            # .ico на macOS не поддерживается — иконку не задаём.
+            pyinstaller --onedir --name Varekai \
+              --hidden-import _build_version main.py
             mkdir -p dist/varekai-client
-            mv dist/Varekai dist/varekai-client/
-            codesign --force --deep --sign - dist/varekai-client/Varekai
+            mv dist/Varekai/* dist/varekai-client/
+            BUNDLE=dist/varekai-client
+
+            # Подпись ИЗНУТРИ НАРУЖУ.Прежний `codesign --deep` на голом
+            # Mach-O (это не .app-бандл) вложенный код не обходит вообще:
+            # переподписывался только исполняемый файл, а Python.framework
+            # и .so/.dylib оставались с подписями, которые AMFI отвергает
+            # ("library load disallowed by system policy").
+            # 1. Снять старые подписи.
+            find "$BUNDLE" -type f \
+              \( -name '*.so' -o -name '*.dylib' -o -name 'Python' \
+                 -o -name 'Varekai' \) -print0 |
+              while IFS= read -r -d '' f; do
+                codesign --remove-signature "$f" 2>/dev/null || true
+              done
+
+            # 2. Листья: расширения Python и разделяемые библиотеки.
+            find "$BUNDLE/_internal" -type f \
+              \( -name '*.so' -o -name '*.dylib' \) -print0 |
+              while IFS= read -r -d '' f; do
+                codesign --force --timestamp=none --sign - "$f"
+              done
+
+            # 3. Фреймворки (Python.framework) — после их содержимого.
+            find "$BUNDLE/_internal" -maxdepth 1 -name '*.framework' -print0 |
+              while IFS= read -r -d '' fw; do
+                codesign --force --timestamp=none --sign - "$fw"
+              done
+
+            # 4. Исполняемый файл — последним.
+            # БЕЗ --options runtime и без самоподписанного identity:
+            # hardened runtime без сертификата Apple включает library
+            # validation и даёт "mapped file has no Team ID".
+            codesign --force --timestamp=none --sign - "$BUNDLE/Varekai"
+
+            # 5. Проверка: без неё битая подпись молча уезжает в релиз.
+            codesign --verify --strict --verbose=2 "$BUNDLE/Varekai"
+            if [ -d "$BUNDLE/_internal/Python.framework" ]; then
+              codesign --verify --deep --strict --verbose=2 \
+                "$BUNDLE/_internal/Python.framework"
+            fi
           else
             pyinstaller --onedir --name varekai-client --hidden-import _build_version --icon app.ico main.py
             if [ "${{ matrix.platform }}" = "windows" ]; then
               mv dist/varekai-client/varekai-client.exe dist/varekai-client/START.exe
-              if [ -f wintun.dll ]; then
-                cp wintun.dll dist/varekai-client/
-              fi
+              ls -la wintun.dll 2>/dev/null || echo "WARNING: wintun.dll not found in workspace"
+              cp wintun.dll dist/varekai-client/ 2>/dev/null || echo "WARNING: failed to copy wintun.dll"
             else
               mv dist/varekai-client/varekai-client dist/varekai-client/Varekai
             fi
@@ -154,4 +196,3 @@ jobs:
           body: ${{ inputs.notes }}
           draft: true
           files: artifacts/*
-

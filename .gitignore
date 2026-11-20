@@ -7,6 +7,7 @@ smart-config.yaml
 settings.json
 mirrors.txt
 core-version.txt
+user-rules.yaml
 
 # === Ядро и рантайм-файлы ===
 prizrak-core

@@ -1,9 +1,13 @@
 """
 Работа с YAML конфигами
 """
+
 from ruamel.yaml import YAML
 
 from utils import CONFIG_CLEAN, CONFIG_SMART, get_os
+
+# Запасной URL проверки задержки, если в профиле его нет.
+DEFAULT_DELAY_URL = "http://cp.cloudflare.com/generate_204"
 
 
 def make_yaml():
@@ -70,14 +74,14 @@ def generate_smart_config(force_stack=None):
                     if "tolerance" in group:
                         del group["tolerance"]
 
-        # Пользовательские правила маршрутизации
-        from user_routing import build_rule_line, inject_into_config, load_user_rules
+        # Пользовательские правила маршрутизации: единый блок ПЕРЕД
+        # провайдерскими, порядок = порядок в user-rules.yaml (= номера в UI).
+        from user_routing import build_rule_line, inject_user_rules, load_user_rules
 
         user_rules = load_user_rules()
         if user_rules and "rules" in config and isinstance(config["rules"], list):
-            direct = [build_rule_line(r) for r in user_rules if r.get("proxy") == "DIRECT"]
-            proxy = [build_rule_line(r) for r in user_rules if r.get("proxy") != "DIRECT"]
-            config["rules"] = inject_into_config(config["rules"], direct, proxy)
+            lines = [build_rule_line(r) for r in user_rules if isinstance(r, dict)]
+            config["rules"] = inject_user_rules(config["rules"], lines)
 
         dump_config_rt(config, CONFIG_SMART)
         return True
@@ -113,3 +117,30 @@ def get_api_secret():
         return config.get("secret", "varekai")
     except Exception:
         return "varekai"
+
+
+def get_delay_test_url() -> str:
+    """URL проверки задержки. Приоритет — адрес штатного health-check
+    из профиля (url-test/smart-группа, затем proxy-providers), чтобы
+    ручной тест шёл тем же маршрутом, что и автоматический.
+
+    Живое значение testUrl из /proxies точнее этого — его читает
+    tui_app._run_delay_test; данная функция — fallback на случай,
+    когда ядро ещё не отдало /proxies.
+    """
+    config_path = CONFIG_SMART if CONFIG_SMART.exists() else CONFIG_CLEAN
+    if not config_path.exists():
+        return DEFAULT_DELAY_URL
+    try:
+        cfg = load_config_rt(config_path)
+        for group in cfg.get("proxy-groups") or []:
+            if isinstance(group, dict) and group.get("url"):
+                return str(group["url"])
+        for prov in (cfg.get("proxy-providers") or {}).values():
+            if isinstance(prov, dict):
+                hc = prov.get("health-check") or {}
+                if isinstance(hc, dict) and hc.get("url"):
+                    return str(hc["url"])
+    except Exception:
+        pass
+    return DEFAULT_DELAY_URL

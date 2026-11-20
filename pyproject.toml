@@ -34,6 +34,8 @@ py-modules = [
     "tui_widgets",
     "tui_connections",
     "tui_rollback",
+    "tui_routing",
+    "user_routing",
 ]
 
 [tool.pytest.ini_options]
@@ -42,8 +44,8 @@ pythonpath = ["."]
 [tool.ruff]
 line-length = 110
 target-version = "py39"
-
 # Мягкий конфиг: только явные проблемы, без стилистического пресса.
+
 [tool.ruff.lint]
 select = ["E", "F", "W", "I"]
 ignore = ["E501"]
