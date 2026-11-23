@@ -45,6 +45,8 @@ CONFIG_CLEAN = APP_DIR / "config.yaml"
 CONFIG_SMART = APP_DIR / "smart-config.yaml"
 MIRRORS_FILE = APP_DIR / "mirrors.txt"
 SETTINGS_FILE = APP_DIR / "settings.json"
+AGE_KEY_FILE = APP_DIR / "age-key.txt"          # chmod 600, отдельно от settings.json
+PROFILE_META_FILE = APP_DIR / "profile-meta.json"  # заголовки ответа подписки
 CORE_REPO = "legiz-ru/Prizrak-Core"
 MAX_ARCHIVES = 3
 FORCE_ADMIN_AT_START = True
@@ -432,6 +434,21 @@ STRINGS = {
         "core_rollback_fail": "Не удалось откатить ядро",
         "arch_broken": "Архив ядра повреждён или пуст",
         "no_asset": "Не найден подходящий ассет релиза для этой платформы",
+        "age_hint": "Если подписка зашифрована, вставьте AGE-SECRET-KEY (выдаётся вместе со ссылкой).",
+        "age_prompt": "AGE-SECRET-KEY (Enter — пропустить): ",
+        "age_saved": "AGE-SECRET-KEY сохранён в age-key.txt",
+        "age_bad": "Некорректный AGE-SECRET-KEY: {error}",
+        "age_recipient": "Публичный ключ (сверьте с ключом на сервере): {key}",
+        "age_needed": "Подписка зашифрована age, но AGE-SECRET-KEY не задан. Задайте его: --age-key",
+        "age_decrypt_fail": "Не удалось расшифровать подписку: {error}",
+        "sub_url_migrated": "ссылка подписки обновлена сервером",
+        "sub_url_fallback": "основная ссылка недоступна, использована резервная",
+        "sub_auto_updated": "Автообновление профиля (каждые {hours} ч)",
+        "sub_traffic": "↓ {down} · ↑ {up}",
+        "sub_expire": "Действует до {date} ({days} дн.)",
+        "sub_expired": "Срок действия истёк {date}",
+        "sub_hwid_limit": "Достигнут лимит устройств подписки",
+        "sub_hwid_unsupported": "Подписка требует HWID — клиент его не передал",
     },
     "en": {
         "not_installed": "not installed",
@@ -579,6 +596,21 @@ STRINGS = {
         "core_rollback_fail": "Failed to roll back core",
         "arch_broken": "Core archive is broken or empty",
         "no_asset": "No suitable release asset found for this platform",
+        "age_hint": "If the subscription is encrypted, paste AGE-SECRET-KEY (issued with the link).",
+        "age_prompt": "AGE-SECRET-KEY (Enter to skip): ",
+        "age_saved": "AGE-SECRET-KEY saved to age-key.txt",
+        "age_bad": "Invalid AGE-SECRET-KEY: {error}",
+        "age_recipient": "Public key (compare with the server key): {key}",
+        "age_needed": "Subscription is age-encrypted but AGE-SECRET-KEY is not set. Set it: --age-key",
+        "age_decrypt_fail": "Failed to decrypt subscription: {error}",
+        "sub_url_migrated": "subscription URL updated by server",
+        "sub_url_fallback": "primary URL unavailable, fallback used",
+        "sub_auto_updated": "Scheduled profile update (every {hours} h)",
+        "sub_traffic": "↓ {down} · ↑ {up}",
+        "sub_expire": "Valid until {date} ({days} d)",
+        "sub_expired": "Expired {date}",
+        "sub_hwid_limit": "Subscription device limit reached",
+        "sub_hwid_unsupported": "Subscription requires HWID — client did not send it",
     },
 }
 

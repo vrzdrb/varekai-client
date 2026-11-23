@@ -530,23 +530,13 @@ def validate_url(url):
 
 def update_profile():
     """Скачивает и обновляет пользовательский профиль.
-    Возвращает: (status, message); 1=обновлено, 2=ошибка"""
-    profile_url = load_profile_url()
-    if not profile_url:
-        return 2, t("val_empty")
-    valid, err = validate_url(profile_url)
-    if not valid:
-        return 2, err
-    try:
-        response = requests.get(profile_url, timeout=15)
-        if response.status_code == 200:
-            CONFIG_CLEAN.write_text(response.text, encoding="utf-8")
-            if not generate_smart_config():
-                return 2, t("profile_update_fail")
-            return 1, t("profile_updated")
-        return 2, f"{t('profile_update_fail')}: HTTP {response.status_code}"
-    except Exception as e:
-        return 2, f"{t('profile_update_fail')}: {e}"
+    Возвращает: (status, message); 1=обновлено, 2=ошибка.
+
+    Реализация в sub_client: заголовки устройства (X-Hwid и др.),
+    age-расшифровка, метаданные ответа, миграция new-url/fallback-url.
+    Ленивый импорт — sub_client тянет requests и config."""
+    from sub_client import update_profile as _update_profile
+    return _update_profile()
 
 
 # === УПРАВЛЕНИЕ ЯДРОМ ===

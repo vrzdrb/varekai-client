@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "varekai-client"
-version = "0.9.9"
+version = "0.9.9f"
 description = "Cross-platform TUI launcher for prizrak-core/mihomo"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -14,6 +14,7 @@ dependencies = [
     "httpx",
     "requests",
     "ruamel.yaml",
+    "cryptography",
 ]
 
 [project.optional-dependencies]
@@ -29,6 +30,9 @@ py-modules = [
     "config",
     "core",
     "clash_api",
+    "sub_meta",
+    "sub_client",
+    "age_crypto",
     "tui",
     "tui_app",
     "tui_widgets",

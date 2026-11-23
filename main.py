@@ -2,6 +2,7 @@
 """
 Varekai-client - кросс-платформенный TUI для prizrak-core
 """
+
 import os
 import signal
 import sys
@@ -24,6 +25,31 @@ from utils import (
 )
 
 
+def request_age_key():
+    """Запрос AGE-SECRET-KEY. Enter — пропустить: подписка может быть
+    открытой. Ключ пишется в отдельный файл с chmod 600, а не в
+    settings.json (там он лежал бы с правами 644)."""
+    from sub_client import save_age_key, validate_age_key
+
+    print(t("age_hint"))
+    while True:
+        line = input(t("age_prompt")).strip()
+        if not line:
+            return
+        err = validate_age_key(line)
+        if err:
+            print(t("age_bad", error=err))
+            continue
+        if save_age_key(line):
+            print(t("age_saved"))
+            try:
+                from age_crypto import recipient_from_identity
+                print(t("age_recipient", key=recipient_from_identity(line)))
+            except Exception:
+                pass  # нет cryptography — публичный ключ не покажем
+        return
+
+
 def request_profile_url():
     if URL_FILE.exists():
         url = URL_FILE.read_text(encoding="utf-8").strip()
@@ -35,6 +61,10 @@ def request_profile_url():
     if url:
         URL_FILE.write_text(url, encoding="utf-8")
         print(t("prof_saved"))
+        # Ключ спрашиваем СРАЗУ после ссылки — иначе зашифрованная
+        # подписка первым же обновлением упала бы в ошибку.
+        request_age_key()
+
 
 _close_handler_ref = None
 
@@ -79,6 +109,12 @@ def main():
     setup_console()
     ensure_dirs()
 
+    # Смена ключа не требует прав администратора — обрабатываем до
+    # повышения привилегий, иначе запрос ушёл бы в перезапуск.
+    if "--age-key" in sys.argv:
+        request_age_key()
+        return
+
     if FORCE_ADMIN_AT_START and get_os() != "linux" and not is_admin():
         print(t("admin_required"))
         print(t("admin_restart"))
@@ -103,6 +139,6 @@ def main():
     from tui import run_tui
     run_tui()
 
+
 if __name__ == "__main__":
     main()
-

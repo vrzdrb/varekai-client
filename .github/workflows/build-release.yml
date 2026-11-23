@@ -13,6 +13,11 @@ on:
         type: string
         default: ''
 
+env:
+  # Для постквантовых получателей age1pq1 нужен age >= 1.3.0.
+  # Проверить наличие и поднять: github.com/FiloSottile/age/releases
+  AGE_VERSION: v1.2.1
+
 jobs:
   build:
     strategy:
@@ -53,14 +58,40 @@ jobs:
           https://gh-proxy.org/
           EOF
 
+      - name: Fetch age binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          V="${AGE_VERSION}"
+          P="${{ matrix.platform }}"
+          A="${{ matrix.arch }}"
+          case "$P" in
+            windows) PKG="age-${V}-windows-${A}.zip" ;;
+            macos)   PKG="age-${V}-darwin-${A}.tar.gz" ;;
+            *)       PKG="age-${V}-linux-${A}.tar.gz" ;;
+          esac
+          URL="https://github.com/FiloSottile/age/releases/download/${V}/${PKG}"
+          echo "Downloading $URL"
+          curl -fsSL --retry 3 --retry-delay 2 -o "$PKG" "$URL"
+          mkdir -p age-extract age-dist
+          if [ "$P" = "windows" ]; then
+            7z x "$PKG" -oage-extract >/dev/null
+            cp age-extract/age/age.exe age-dist/age.exe
+          else
+            tar -xzf "$PKG" -C age-extract
+            cp age-extract/age/age age-dist/age
+            chmod +x age-dist/age
+          fi
+          ls -la age-dist/
+
       - name: Create macOS starter
         if: matrix.platform == 'macos'
         shell: bash
         run: |
           # sudo -E, а не osascript из main.py: do shell script запускает
           # процесс с пайпами вместо терминала, и TUI без TTY не поднимется.
-          # Здесь права повышаются в том же терминале, TTY сохраняется.
-          printf '#!/bin/bash\ncd "$(dirname "$0")" || exit 1\nchmod +x ./Varekai 2>/dev/null\nxattr -dr com.apple.quarantine . 2>/dev/null\nexec sudo -E ./Varekai\n' > START.command
+          # xattr -dr снимает карантин РЕКУРСИВНО — в том числе с age.
+          printf '#!/bin/bash\ncd "$(dirname "$0")" || exit 1\nchmod +x ./Varekai ./age 2>/dev/null\nxattr -dr com.apple.quarantine . 2>/dev/null\nexec sudo -E ./Varekai\n' > START.command
           chmod +x START.command
 
       - name: Embed version into build
@@ -81,21 +112,15 @@ jobs:
         shell: bash
         run: |
           if [ "${{ matrix.platform }}" = "macos" ]; then
-            # onedir: у onefile внутренние библиотеки распаковываются во
-            # временный каталог, что добавляет проблем с подписью.
-            # .ico на macOS не поддерживается — иконку не задаём.
             pyinstaller --onedir --name Varekai \
               --hidden-import _build_version main.py
             mkdir -p dist/varekai-client
             mv dist/Varekai/* dist/varekai-client/
+            cp age-dist/age dist/varekai-client/age
             BUNDLE=dist/varekai-client
 
-            # Подпись ИЗНУТРИ НАРУЖУ.Прежний `codesign --deep` на голом
-            # Mach-O (это не .app-бандл) вложенный код не обходит вообще:
-            # переподписывался только исполняемый файл, а Python.framework
-            # и .so/.dylib оставались с подписями, которые AMFI отвергает
-            # ("library load disallowed by system policy").
-            # 1. Снять старые подписи.
+            # Подпись ИЗНУТРИ НАРУЖУ. --deep на голом Mach-O вложенный
+            # код не обходит: переподписывался только исполняемый файл.
             find "$BUNDLE" -type f \
               \( -name '*.so' -o -name '*.dylib' -o -name 'Python' \
                  -o -name 'Varekai' \) -print0 |
@@ -103,26 +128,22 @@ jobs:
                 codesign --remove-signature "$f" 2>/dev/null || true
               done
 
-            # 2. Листья: расширения Python и разделяемые библиотеки.
             find "$BUNDLE/_internal" -type f \
               \( -name '*.so' -o -name '*.dylib' \) -print0 |
               while IFS= read -r -d '' f; do
                 codesign --force --timestamp=none --sign - "$f"
               done
 
-            # 3. Фреймворки (Python.framework) — после их содержимого.
             find "$BUNDLE/_internal" -maxdepth 1 -name '*.framework' -print0 |
               while IFS= read -r -d '' fw; do
                 codesign --force --timestamp=none --sign - "$fw"
               done
 
-            # 4. Исполняемый файл — последним.
-            # БЕЗ --options runtime и без самоподписанного identity:
-            # hardened runtime без сертификата Apple включает library
-            # validation и даёт "mapped file has no Team ID".
+            # Bundled age — тоже подписываем, иначе Gatekeeper его не пустит.
+            codesign --force --timestamp=none --sign - "$BUNDLE/age"
             codesign --force --timestamp=none --sign - "$BUNDLE/Varekai"
 
-            # 5. Проверка: без неё битая подпись молча уезжает в релиз.
+            codesign --verify --strict --verbose=2 "$BUNDLE/age"
             codesign --verify --strict --verbose=2 "$BUNDLE/Varekai"
             if [ -d "$BUNDLE/_internal/Python.framework" ]; then
               codesign --verify --deep --strict --verbose=2 \
@@ -134,13 +155,24 @@ jobs:
               mv dist/varekai-client/varekai-client.exe dist/varekai-client/START.exe
               ls -la wintun.dll 2>/dev/null || echo "WARNING: wintun.dll not found in workspace"
               cp wintun.dll dist/varekai-client/ 2>/dev/null || echo "WARNING: failed to copy wintun.dll"
+              cp age-dist/age.exe dist/varekai-client/age.exe
             else
               mv dist/varekai-client/varekai-client dist/varekai-client/Varekai
+              cp age-dist/age dist/varekai-client/age
             fi
           fi
           cp mirrors.txt dist/varekai-client/
           if [ "${{ matrix.platform }}" = "macos" ]; then
             cp START.command dist/varekai-client/
+          fi
+
+      - name: Verify bundled age runs
+        shell: bash
+        run: |
+          if [ "${{ matrix.platform }}" = "windows" ]; then
+            ./dist/varekai-client/age.exe --version
+          else
+            ./dist/varekai-client/age --version
           fi
 
       - name: Package

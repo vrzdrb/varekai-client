@@ -79,6 +79,7 @@ UI_REV = "gr108"  # маркер сборки интерфейса (для пр�
 PING_CONCURRENCY = 24         # одновременных запросов к API ядра
 PING_TIMEOUT_MS = 5000        # серверный таймаут одного узла
 PING_RETRY_TIMEOUT_MS = 8000  # повтор только для тех, кто дал N/A
+SUB_UPDATE_CHECK = 60  # с, тик проверки расписания автообновления профиля
 
 
 class QuitScreen(ModalScreen):
@@ -267,6 +268,16 @@ class VarekaiApp(App):
     #status_label .fb-a { color: #1a1a1a; }
     .btn-action .fb-a, .btn-lang .fb-a, .quit-btn .fb-a { color: $secondary; }
     #info_label { width: 100%; text-align: center; margin: 0 0 1 0; }
+    /* Метаданные подписки: под версией ядра, над четырьмя кнопками.
+       height: auto + display=False при пустых метаданных — у обычных
+       подписок без этих заголовков раскладка не меняется ни на строку. */
+    #sub_meta {
+        width: 100%;
+        height: auto;
+        max-height: 5;
+        text-align: center;
+        margin: 0 0 1 0;
+}
     .btn-row { width: 100%; height: 3; margin: 1 0; }
     .btn-action {
         width: 1fr; height: 100%; margin: 0;
@@ -506,6 +517,7 @@ class VarekaiApp(App):
             with Container(classes="panel left-panel"):
                 yield BoldLabel("", id="status_label", color="#1a1a1a")
                 yield Static(id="info_label")
+                yield Static("", id="sub_meta")
                 with Horizontal(classes="btn-row"):
                     yield FlatButton(
                         self._btn_caption(t("btn_update_run"), "\U0001F504", frame=">>"),
@@ -561,6 +573,12 @@ class VarekaiApp(App):
         self._register_themes()
         self._apply_theme(get_theme_name(), save=False)
         self._sel_node = None  # выделенная кликом строка ноды: (group, key)
+        self._sub_updating = False
+        self._render_sub_meta()
+        # Тик раз в минуту, а не один таймер на N часов: интервал приходит
+        # с любым обновлением подписки и может поменяться, а длинный
+        # таймер уезжает после сна машины.
+        self.set_interval(SUB_UPDATE_CHECK, self._maybe_auto_update_profile)
 
     def update_status(self):
         pid = get_core_pid()
@@ -578,6 +596,59 @@ class VarekaiApp(App):
             self.vpn_running = False
             btn_toggle.update_text(self._toggle_caption())
         self.update_info_line()
+
+    def _render_sub_meta(self) -> None:
+        """Строки из заголовков подписки. Text(...), а не разметка:
+        в объявлении и титуле легко встречаются '[...]' — Rich их съест."""
+        from sub_meta import load_meta, summary
+        try:
+            widget = self.query_one("#sub_meta", Static)
+        except Exception:
+            return
+        lines = summary(load_meta())
+        if not lines:
+            widget.update("")
+            widget.display = False
+            return
+        th = get_theme_colors()
+        # warn = footer_key: единственный ключ, который светлый во ВСЕХ
+        # темах (button_bg у geek_green почти чёрный — был бы невидим).
+        colors = {"info": th["fill_text"], "warn": th["footer_key"], "err": th["log_err"]}
+        text = Text()
+        for i, (kind, line) in enumerate(lines):
+            if i:
+                text.append("\n")
+            text.append(line, style=f"bold {colors.get(kind, th['fill_text'])}")
+        widget.update(text)
+        widget.display = True
+
+    def _maybe_auto_update_profile(self) -> None:
+        """Автообновление по Profile-Update-Interval. Ядро не перезапускаем
+        и конфиг на живом ядре не перечитываем: релоад рвёт соединения,
+        а по расписанию это неприемлемо. Новый конфиг подхватится при
+        следующем старте VPN; счётчики трафика и срок обновляются сразу."""
+        from sub_client import auto_update_due
+        from sub_meta import load_meta
+        if self._sub_updating:
+            return
+        meta = load_meta()
+        if not auto_update_due(meta):
+            return
+        self._sub_updating = True
+        self._auto_hours = meta.get("update_interval")
+        self.run_worker(self._worker_auto_update_profile, thread=True)
+
+    def _worker_auto_update_profile(self) -> None:
+        try:
+            status, msg = update_profile()
+            prefix = t("sub_auto_updated", hours=self._auto_hours)
+            self._log_result(status == 1, f"{prefix}: {msg}")
+            self.call_from_thread(self._render_sub_meta)
+            self.call_from_thread(self._reload_groups_order)
+        except Exception:
+            pass
+        finally:
+            self._sub_updating = False
 
     def update_info_line(self):
         country = replace_flag_emojis(self.current_country or t("country_unknown"))

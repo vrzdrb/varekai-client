@@ -1,6 +1,8 @@
 # === Персональные данные ===
 URL.txt
 config.yaml
+age-key.txt
+profile-meta.json
 
 # === Генерируемые конфиги и локальные настройки ===
 smart-config.yaml
@@ -21,13 +23,27 @@ country.mmdb
 geoip.dat
 geosite.dat
 .varekai-no-setcap
+.config-*
+varekai-core-*
 
 # === Скачанное и генерируемое ===
 archives/
 unified/
+providers-old/
 temp_extract/
 START.desktop
 START.command
+
+# === Bundled age (скачивается CI, в репозитории не нужен) ===
+/age
+/age.exe
+age-dist/
+age-extract/
+age-v*.tar.gz
+age-v*.zip
+
+# === CI / сборка ===
+_build_version.py
 
 # === Python / сборка ===
 __pycache__/
@@ -37,6 +53,12 @@ build/
 dist/
 .venv/
 *.egg-info/
+
+# === Тесты и линтер ===
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 
 # === Мусор ОС ===
 .DS_Store
