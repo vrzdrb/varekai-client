@@ -1,3 +1,6 @@
+import re
+from pathlib import Path
+
 import pytest
 
 import utils
@@ -79,3 +82,15 @@ def test_scrollbar_palette_not_affected_by_group_buttons():
         th = utils.THEMES[name]
         assert th["group_bg"] == th["button_bg"]
         assert th["group_bg"] != th["group_btn_bg"]
+
+
+def test_project_version_is_pep440():
+    """setuptools отвергает не-PEP440 версию на `pip install -e .`.
+    Ни ruff, ни остальные тесты этого не проверяют — дефект уезжает
+    в CI. Значение '0.9.9f' ломало сборку именно так."""
+    ver = pytest.importorskip("packaging.version")
+    root = Path(__file__).resolve().parent.parent
+    text = (root / "pyproject.toml").read_text(encoding="utf-8")
+    m = re.search(r'^version\s*=\s*"([^"]+)"', text, re.M)
+    assert m, "в pyproject.toml не найден project.version"
+    ver.Version(m.group(1))   # InvalidVersion — если версия не по PEP 440
